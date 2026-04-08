@@ -5,7 +5,7 @@ import numpy as np
 small = "tools\sampling_elevate_safe_2026-04-03_22-15-18.csv"
 onoff = "tools\sampling_2026-04-04_17-18-33_on_off_boarding.csv"
 updown = "tools\sampling_2026-04-04_17-20-04_up_and_down.csv"
-nuovo = "tools/sampling_2026-04-08_16-56-03.csv"
+nuovo = "tools\sampling_2026-04-08_16-56-03.csv"
 choose = nuovo # CAMBIA QUI PER CAMBIARE GRAFICO
 names = ["Timestamp","AccelX","AccelY","AccelZ","DoorHall","FloorHall"]
 df = pd.read_csv(choose, names=names, header=0)
@@ -32,7 +32,7 @@ axes[2].plot(df["Timestamp"], df["AccelZ"], color="#854F0B", linewidth=0.8)
 axes[2].set_ylabel("AccelZ (g)")
 axes[2].axhline(0, color="gray", linewidth=0.4, linestyle="--")
 axes[2].set_xlabel("Tempo (s)")
-print((df["AccelZ"]==0.0).sum()/len(df["AccelZ"])) #PROBLEMO = dovrebbe avvicinarsi a 0
+print("ratio of 0 samples: ", (df["AccelZ"]==0.0).sum()/len(df["AccelZ"])) #PROBLEMO = dovrebbe avvicinarsi a 0
  
 for ax in axes:
     ax.grid(True, linewidth=0.3, alpha=0.5)

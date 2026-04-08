@@ -55,8 +55,8 @@ volatile float latestAccelZ = 0.0;
 SemaphoreHandle_t displayMutex;
 
 // Define your new I2C pins
-const int IMU_SDA_PIN = 6; //verde
-const int IMU_SCL_PIN = 7; //arancione
+const int IMU_SDA_PIN = 26; //verde
+const int IMU_SCL_PIN = 27; //arancione
 
 // Heltec WiFi LoRa 32 V3 onboard OLED pins
 const int OLED_SDA_PIN = 17;
@@ -76,13 +76,11 @@ const int HALL_DOOR_PIN = 1;
 const int HALL_FLOOR_PIN = 2;
 
 // Calibration offsets for IMU (auto-calibrated on startup)
-float CALIB_X = 0.0;
-float CALIB_Y = 0.0;
-float CALIB_Z = 0.0;
+float CALIB_X, CALIB_Y, CALIB_Z = 0.0;
 
 // Struct for our sensor data
 struct SensorData {
-  float accel[3];  // [0]=X, [1]=Y, [2]=Z
+  float accelXYZ[3];  // [0]=X, [1]=Y, [2]=Z
   int doorHall;
   int floorHall;
 };
@@ -128,15 +126,15 @@ void SensorTask(void *pvParameters) {
   for (;;) {
     // Wait for hardware timer to trigger (1kHz)
     if (xSemaphoreTake(samplingTrigger, portMAX_DELAY) == pdTRUE) {
-      currentData.accel[0] = myIMU.readFloatAccelX() - CALIB_X;
-      currentData.accel[1] = myIMU.readFloatAccelY() - CALIB_Y;
-      currentData.accel[2] = myIMU.readFloatAccelZ() - CALIB_Z;
-      currentData.doorHall = 0;  // Placeholder
-      currentData.floorHall = 0;  // Placeholder
+      currentData = {.accelXYZ = {myIMU.readFloatAccelX() - CALIB_X,
+                                  myIMU.readFloatAccelY() - CALIB_Y,
+                                  myIMU.readFloatAccelZ() - CALIB_Z},
+                     .doorHall = 0,  // Placeholder
+                     .floorHall = 0};  // Placeholder
 
       // Update global variable for DisplayTask
       if (xSemaphoreTake(displayMutex, 0) == pdTRUE) {
-        latestAccelZ = currentData.accel[2];
+        latestAccelZ = currentData.accelXYZ[2];
         xSemaphoreGive(displayMutex);
       }
 
@@ -178,12 +176,11 @@ void vCommTask(void *pvParameters) {
         SensorData* dataBlock = (SensorData*)blockBuffer;
         
         // Calculate statistics for Z axis (accel[2])
-        float minZ = dataBlock[0].accel[2];
-        float maxZ = dataBlock[0].accel[2];
+        float minZ, maxZ = dataBlock[0].accelXYZ[2];
         float sumZ = 0.0;
         
         for (int i = 0; i < SAMPLES_PER_BLOCK; i++) {
-          float z = dataBlock[i].accel[2];
+          float z = dataBlock[i].accelXYZ[2];
           sumZ += z;
           if (z < minZ) minZ = z;
           if (z > maxZ) maxZ = z;
@@ -267,7 +264,7 @@ void setup() {
   } else {
     debugPrintln("OLED init OK");
   }
-  
+
   // 1. Initialize the second I2C bus (Wire) with your custom pins
 
   Wire.begin(IMU_SDA_PIN, IMU_SCL_PIN);  // Initialize directly with IMU pins
@@ -332,8 +329,8 @@ void setup() {
 
   // Create Tasks
   xTaskCreatePinnedToCore(SensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
-  xTaskCreatePinnedToCore(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle, 0);
-  xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
+  xTaskCreatePinnedToCore(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle, 0);
+  xTaskCreate(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }
 
 void loop() {
