@@ -2,23 +2,61 @@
 #include <SparkFunLSM6DS3.h> // Example library
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <esp_timer.h>
+#include <freertos/stream_buffer.h>
 // #include "ElevateSafe_TinyML.h" // Exported from Edge Impulse
+
+// ========== DEBUG MODE CONFIGURATION ==========
+// Set to true for debug messages, false for actual serial communication
+bool DEBUG_MODE = false;
+
+// Helper functions for debug/communication output
+void debugPrint(const char* format, ...) {
+  if (DEBUG_MODE) {
+    char buffer[256];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    Serial.print(buffer);
+  }
+}
+
+void debugPrintln(const char* message) {
+  if (DEBUG_MODE) {
+    Serial.println(message);
+  }
+}
+
+// ==============================================
 
 // Task Handles
 TaskHandle_t SensorTaskHandle;
-TaskHandle_t InferenceTaskHandle;
 TaskHandle_t DisplayTaskHandle;
+TaskHandle_t CommTaskHandle;
 
-// Data Queue
-QueueHandle_t imuQueue;
+// StreamBuffer for efficient binary data transfer
+StreamBufferHandle_t sensorStreamBuffer;
+
+// Semaphore to trigger sampling at precise 1kHz
+SemaphoreHandle_t samplingTrigger;
+
+// Timer handle
+esp_timer_handle_t samplingTimer;
+
+
+#define SAMPLE_RATE_HZ 1000
+#define SAMPLES_PER_BLOCK 50
+#define TIMER_PERIOD_US (1000000 / SAMPLE_RATE_HZ)  // 1000 us = 1ms
+#define STREAM_BUFFER_SIZE (SAMPLES_PER_BLOCK * sizeof(SensorData) * 2)
 
 // Global variable to store latest Z value for display
 volatile float latestAccelZ = 0.0;
 SemaphoreHandle_t displayMutex;
 
 // Define your new I2C pins
-const int IMU_SDA_PIN = 41; //verde
-const int IMU_SCL_PIN = 42; //arancione
+const int IMU_SDA_PIN = 6; //verde
+const int IMU_SCL_PIN = 7; //arancione
 
 // Heltec WiFi LoRa 32 V3 onboard OLED pins
 const int OLED_SDA_PIN = 17;
@@ -37,6 +75,11 @@ LSM6DS3 myIMU(I2C_MODE, 0x6B);
 const int HALL_DOOR_PIN = 1; 
 const int HALL_FLOOR_PIN = 2;
 
+// Calibration offsets for IMU (auto-calibrated on startup)
+float CALIB_X = 0.0;
+float CALIB_Y = 0.0;
+float CALIB_Z = 0.0;
+
 // Struct for our sensor data
 struct SensorData {
   float accelX, accelY, accelZ;
@@ -45,90 +88,99 @@ struct SensorData {
 };
 
 void scanI2C(TwoWire &bus, const char *busName) {
-  Serial.printf("I2C scan on %s...\n", busName);
+  debugPrint("I2C scan on %s...\n", busName);
   int count = 0;
   for (uint8_t addr = 1; addr < 127; addr++) {
     bus.beginTransmission(addr);
     if (bus.endTransmission() == 0) {
-      Serial.printf("  - device at 0x%02X\n", addr);
+      debugPrint("  - device at 0x%02X\n", addr);
       count++;
     }
   }
   if (count == 0) {
-    Serial.println("  - no devices found");
+    debugPrintln("  - no devices found");
   }
 }
 
-// --- TASK 1: Sensor Reading (100Hz) ---
+
+// Hardware timer ISR callback - triggers SensorTask at 1kHz
+void timerCallback(void *arg) {
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  xSemaphoreGiveFromISR(samplingTrigger, &xHigherPriorityTaskWoken);
+  if (xHigherPriorityTaskWoken) {
+    portYIELD_FROM_ISR();
+  }
+}
+
+// --- TASK 1: Sensor Reading (triggered by hardware timer) ---
 void SensorTask(void *pvParameters) {
   SensorData currentData;
-  TickType_t xLastWakeTime = xTaskGetTickCount();
-  const TickType_t xFrequency = pdMS_TO_TICKS(10); // 10ms = 100Hz
-  uint8_t printDivider = 0;
 
-  for(;;) {
-    currentData.accelX = myIMU.readFloatAccelX();
-    currentData.accelY = myIMU.readFloatAccelY();
-    currentData.accelZ = myIMU.readFloatAccelZ();
-    latestAccelZ = currentData.accelZ;  // Update global variable for display
-    //currentData.doorHall = analogRead(HALL_DOOR_PIN);
-    //currentData.floorHall = analogRead(HALL_FLOOR_PIN);
+  for (;;) {
+    // Wait for hardware timer to trigger (1kHz)
+    if (xSemaphoreTake(samplingTrigger, portMAX_DELAY) == pdTRUE) {
+      currentData.accelX = myIMU.readFloatAccelX() - CALIB_X;
+      currentData.accelY = myIMU.readFloatAccelY() - CALIB_Y;
+      currentData.accelZ = myIMU.readFloatAccelZ() - CALIB_Z;
+      currentData.doorHall = 0;  // Placeholder
+      currentData.floorHall = 0;  // Placeholder
 
-    // Send data to queue, do not block if full
-    xQueueSend(imuQueue, &currentData, 0);
-
-    // Print at 10Hz to avoid flooding serial output and timing jitter.
-    if (++printDivider >= 10) {
-      printDivider = 0;
-      Serial.printf("[%10lu ms] IMU Accel [g] X: %.3f Y: %.3f Z: %.3f\n",
-                    millis(),
-                    currentData.accelX,
-                    currentData.accelY,
-                    currentData.accelZ);
-    }
-
-    // Ensure strict 100Hz timing
-    vTaskDelayUntil(&xLastWakeTime, xFrequency);
-  }
-}
-
-// --- TASK 2: TinyML Inference ---
-void InferenceTask(void *pvParameters) {
-  SensorData receivedData;
-  float mlBuffer[300]; // Example: 100 samples * 3 axes
-  int bufferIndex = 0;
-
-  for(;;) {
-    // Wait for data from the sensor task
-    if (xQueueReceive(imuQueue, &receivedData, portMAX_DELAY) == pdPASS) {
-      
-      /* Check simple thresholds first (Hall Sensors)
-      if (receivedData.doorHall > 2000) {
-        Serial.println("EVENT: Door Open Detected!");
+      // Update global variable for DisplayTask
+      if (xSemaphoreTake(displayMutex, 0) == pdTRUE) {
+        latestAccelZ = currentData.accelZ;
+        xSemaphoreGive(displayMutex);
       }
 
-      // Fill buffer for ML
-      mlBuffer[bufferIndex++] = receivedData.accelX;
-      mlBuffer[bufferIndex++] = receivedData.accelY;
-      mlBuffer[bufferIndex++] = receivedData.accelZ;
-
-      // When buffer is full, run inference!
-      if (bufferIndex >= 300) {
-        bufferIndex = 0; // Reset
-        
-        // --- PSEUDOCODE FOR EDGE IMPULSE ---
-        // signal_t signal;
-        // int err = numpy::signal_from_buffer(mlBuffer, 300, &signal);
-        // ei_impulse_result_t result = { 0 };
-        // err = run_classifier(&signal, &result, false);
-        // Serial.printf("Anomaly Score: %.3f\n", result.anomaly);
-        
-        // TODO: Pass results to a LoRa communication task*/
-
-      
+      // Write to StreamBuffer (non-blocking)
+      xStreamBufferSend(sensorStreamBuffer, &currentData, sizeof(SensorData), 0);
     }
   }
 }
+
+
+// --- TASK 2: Communication - sends data blocks ---
+void vCommTask(void *pvParameters) {
+  uint8_t blockBuffer[SAMPLES_PER_BLOCK * sizeof(SensorData)];
+  size_t totalBytes = SAMPLES_PER_BLOCK * sizeof(SensorData);
+  
+  for (;;) {
+    // Block until we have a full block of 50 samples
+    size_t receivedBytes = xStreamBufferReceive(
+      sensorStreamBuffer, 
+      blockBuffer, 
+      totalBytes, 
+      portMAX_DELAY
+    );
+    
+    if (receivedBytes == totalBytes) {
+      if (DEBUG_MODE) {
+        // Cast blockBuffer to SensorData array
+        SensorData* dataBlock = (SensorData*)blockBuffer;
+        
+        // Calculate statistics
+        float minZ = dataBlock[0].accelZ;
+        float maxZ = dataBlock[0].accelZ;
+        float sumZ = 0.0;
+        
+        for (int i = 0; i < SAMPLES_PER_BLOCK; i++) {
+          float z = dataBlock[i].accelZ;
+          sumZ += z;
+          if (z < minZ) minZ = z;
+          if (z > maxZ) maxZ = z;
+        }
+        float avgZ = sumZ / SAMPLES_PER_BLOCK;
+        
+        // Display block statistics
+        debugPrint("[CommTask] Block #%lu | Z: avg=%.3f min=%.3f max=%.3f g\n", 
+                   millis(), avgZ, minZ, maxZ);
+      } else {
+        // Send as binary block in communication mode
+        Serial.write(blockBuffer, totalBytes);
+      }
+    }
+  }
+}
+
 
 // --- TASK 3: Display Update (2Hz) ---
 void DisplayTask(void *pvParameters) {
@@ -157,14 +209,20 @@ void DisplayTask(void *pvParameters) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  if(DEBUG_MODE) {
+    Serial.begin(115200);
+    
+  }
+  else {
+    Serial.begin(2000000);
+  }
   // Give the monitor a short window to attach after reset.
   unsigned long serialStart = millis();
   while (!Serial && (millis() - serialStart) < 3000) {
     delay(10);
   }
-  Serial.println("\n[BOOT] ElevateSafe start");
-  delay(300);
+  debugPrintln("\n[BOOT] ElevateSafe start");
+  delay(3000);
 
   // Heltec V3 powers OLED through Vext (active LOW).
   pinMode(OLED_VEXT_PIN, OUTPUT);
@@ -179,39 +237,82 @@ void setup() {
 
   // Initialize I2C on dedicated OLED pins and scan for devices.
   Wire1.begin(OLED_SDA_PIN, OLED_SCL_PIN);  // 17, 18 for OLED
-  Wire1.setClock(400000);
+  Wire1.setClock(400000);  // Set for OLED
   scanI2C(Wire1, "Wire1(OLED)");
 
   // Keep static "Hello" text on-screen.
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C, true, false)) {
-    Serial.println("OLED init failed at 0x3C. Check I2C scan output.");
+    debugPrintln("OLED init failed at 0x3C. Check I2C scan output.");
   } else {
-    Serial.println("OLED init OK");
+    debugPrintln("OLED init OK");
   }
   
   // 1. Initialize the second I2C bus (Wire) with your custom pins
-  Wire.begin();  // default pins
-  scanI2C(Wire, "Wire(default pins)");
-  Wire.~TwoWire();  // release it
 
-  Wire.begin(IMU_SDA_PIN, IMU_SCL_PIN);  // 41, 42 for IMU
-  status_t imuStatus = myIMU.begin();
-  Serial.printf("IMU begin status: %d (0=IMU_SUCCESS, 1=IMU_ERROR)\n", imuStatus);
-
+  Wire.begin(IMU_SDA_PIN, IMU_SCL_PIN);  // Initialize directly with IMU pins
+  Wire.setClock(400000);
   scanI2C(Wire, "Wire(IMU)");
+  status_t imuStatus = myIMU.begin();
+  debugPrint("IMU begin status: %d (0=IMU_SUCCESS, 1=IMU_ERROR)\n", imuStatus);
+  if (imuStatus != 0) {
+    debugPrintln("ERROR: IMU initialization failed!");
+  }
 
-  Serial.println("[BOOT] Tasks starting");
+  debugPrintln("[BOOT] Initializing FreeRTOS objects");
 
-  // Create a queue to hold 100 samples
-  imuQueue = xQueueCreate(100, sizeof(SensorData));
-
-  // Create display mutex for thread-safe access
+  // Create display mutex for thread-safe access to latestAccelZ
   displayMutex = xSemaphoreCreateMutex();
+  if (displayMutex == NULL) {
+    debugPrintln("ERROR: Display mutex creation failed!");
+    while(1); // halt
+  }
+
+  // Create StreamBuffer for sensor data
+  sensorStreamBuffer = xStreamBufferCreate(
+    STREAM_BUFFER_SIZE,
+    SAMPLES_PER_BLOCK * sizeof(SensorData)  // Trigger level: one full block
+  );
+  
+  if (sensorStreamBuffer == NULL) {
+    debugPrintln("ERROR: StreamBuffer creation failed!");
+    while(1); // halt
+  }
+
+  // Create sampling trigger semaphore
+  samplingTrigger = xSemaphoreCreateBinary();
+  if (samplingTrigger == NULL) {
+    debugPrintln("ERROR: Semaphore creation failed!");
+    while(1); // halt
+  }
+
+  // Create and start hardware timer (1kHz sampling)
+  esp_timer_create_args_t timerConfig = {
+    .callback = timerCallback,
+    .arg = NULL,
+    .name = "SamplingTimer"
+  };
+  
+  if (esp_timer_create(&timerConfig, &samplingTimer) != ESP_OK) {
+    debugPrintln("ERROR: Timer creation failed!");
+    while(1); // halt
+  }
+  
+  if (esp_timer_start_periodic(samplingTimer, TIMER_PERIOD_US) != ESP_OK) {
+    debugPrintln("ERROR: Timer start failed!");
+    while(1); // halt
+  }
+
+  debugPrint("[BOOT] Hardware timer started: %lu Hz sampling\n", (long)SAMPLE_RATE_HZ);
+  debugPrint("[BOOT] Sending blocks of %d samples (%.1f ms)\n", 
+                SAMPLES_PER_BLOCK, 
+                (float)SAMPLES_PER_BLOCK * 1000.0f / SAMPLE_RATE_HZ);
+
+  debugPrintln("[BOOT] Creating FreeRTOS tasks...");
 
   // Create Tasks
   xTaskCreatePinnedToCore(SensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
-  xTaskCreatePinnedToCore(InferenceTask, "InferenceTask", 8192, NULL, 2, &InferenceTaskHandle, 0);
   xTaskCreatePinnedToCore(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle, 0);
+  xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
 }
 
 void loop() {
