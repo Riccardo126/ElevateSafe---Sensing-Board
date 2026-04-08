@@ -45,7 +45,7 @@ SemaphoreHandle_t samplingTrigger;
 esp_timer_handle_t samplingTimer;
 
 
-#define SAMPLE_RATE_HZ 1000
+#define SAMPLE_RATE_HZ 1000 //max 1600 for LSMDS3
 #define SAMPLES_PER_BLOCK 50
 #define TIMER_PERIOD_US (1000000 / SAMPLE_RATE_HZ)  // 1000 us = 1ms
 #define STREAM_BUFFER_SIZE (SAMPLES_PER_BLOCK * sizeof(SensorData) * 2)
@@ -86,6 +86,15 @@ struct SensorData {
   int doorHall;
   int floorHall;
 };
+
+// Block header for synchronization
+struct BlockHeader {
+  uint8_t magicByte;    // 0xAA - fixed marker
+  uint8_t blockSeq;     // Sequence number (0-255, wraps around)
+};
+
+// Counter for block sequence
+volatile uint8_t blockSequence = 0;
 
 void scanI2C(TwoWire &bus, const char *busName) {
   debugPrint("I2C scan on %s...\n", busName);
@@ -142,14 +151,25 @@ void SensorTask(void *pvParameters) {
 void vCommTask(void *pvParameters) {
   uint8_t blockBuffer[SAMPLES_PER_BLOCK * sizeof(SensorData)];
   size_t totalBytes = SAMPLES_PER_BLOCK * sizeof(SensorData);
+  BlockHeader header;
+  header.magicByte = 0xAA;  // Fixed sync marker
+  
+  // Send a sync marker every 100ms to help with synchronization
+  uint32_t lastSyncMarker = millis();
   
   for (;;) {
+    // Periodically send just the sync byte if buffer is empty (for sync help)
+    if (!DEBUG_MODE && (millis() - lastSyncMarker) > 100) {
+      Serial.write(0xAA);
+      lastSyncMarker = millis();
+    }
+    
     // Block until we have a full block of 50 samples
     size_t receivedBytes = xStreamBufferReceive(
       sensorStreamBuffer, 
       blockBuffer, 
       totalBytes, 
-      portMAX_DELAY
+      10  // timeout 10ms instead of portMAX_DELAY
     );
     
     if (receivedBytes == totalBytes) {
@@ -174,7 +194,9 @@ void vCommTask(void *pvParameters) {
         debugPrint("[CommTask] Block #%lu | Z: avg=%.3f min=%.3f max=%.3f g\n", 
                    millis(), avgZ, minZ, maxZ);
       } else {
-        // Send as binary block in communication mode
+        // Send block header + data in communication mode
+        header.blockSeq = blockSequence++;
+        Serial.write((uint8_t*)&header, sizeof(BlockHeader));
         Serial.write(blockBuffer, totalBytes);
       }
     }
@@ -210,8 +232,7 @@ void DisplayTask(void *pvParameters) {
 
 void setup() {
   if(DEBUG_MODE) {
-    Serial.begin(115200);
-    
+    Serial.begin(115200); 
   }
   else {
     Serial.begin(2000000);
