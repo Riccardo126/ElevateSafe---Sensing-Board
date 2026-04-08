@@ -82,7 +82,7 @@ float CALIB_Z = 0.0;
 
 // Struct for our sensor data
 struct SensorData {
-  float accelX, accelY, accelZ;
+  float accel[3];  // [0]=X, [1]=Y, [2]=Z
   int doorHall;
   int floorHall;
 };
@@ -119,15 +119,15 @@ void SensorTask(void *pvParameters) {
   for (;;) {
     // Wait for hardware timer to trigger (1kHz)
     if (xSemaphoreTake(samplingTrigger, portMAX_DELAY) == pdTRUE) {
-      currentData.accelX = myIMU.readFloatAccelX() - CALIB_X;
-      currentData.accelY = myIMU.readFloatAccelY() - CALIB_Y;
-      currentData.accelZ = myIMU.readFloatAccelZ() - CALIB_Z;
+      currentData.accel[0] = myIMU.readFloatAccelX() - CALIB_X;
+      currentData.accel[1] = myIMU.readFloatAccelY() - CALIB_Y;
+      currentData.accel[2] = myIMU.readFloatAccelZ() - CALIB_Z;
       currentData.doorHall = 0;  // Placeholder
       currentData.floorHall = 0;  // Placeholder
 
       // Update global variable for DisplayTask
       if (xSemaphoreTake(displayMutex, 0) == pdTRUE) {
-        latestAccelZ = currentData.accelZ;
+        latestAccelZ = currentData.accel[2];
         xSemaphoreGive(displayMutex);
       }
 
@@ -157,13 +157,13 @@ void vCommTask(void *pvParameters) {
         // Cast blockBuffer to SensorData array
         SensorData* dataBlock = (SensorData*)blockBuffer;
         
-        // Calculate statistics
-        float minZ = dataBlock[0].accelZ;
-        float maxZ = dataBlock[0].accelZ;
+        // Calculate statistics for Z axis (accel[2])
+        float minZ = dataBlock[0].accel[2];
+        float maxZ = dataBlock[0].accel[2];
         float sumZ = 0.0;
         
         for (int i = 0; i < SAMPLES_PER_BLOCK; i++) {
-          float z = dataBlock[i].accelZ;
+          float z = dataBlock[i].accel[2];
           sumZ += z;
           if (z < minZ) minZ = z;
           if (z > maxZ) maxZ = z;
