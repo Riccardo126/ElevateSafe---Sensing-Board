@@ -5,7 +5,8 @@ import numpy as np
 small = "tools\sampling_elevate_safe_2026-04-03_22-15-18.csv"
 onoff = "tools\sampling_2026-04-04_17-18-33_on_off_boarding.csv"
 updown = "tools\sampling_2026-04-04_17-20-04_up_and_down.csv"
-choose = small # CAMBIA QUI PER CAMBIARE GRAFICO
+nuovo = "tools\sampling_2026-04-07_18-34-00_preliminar_tests.csv"
+choose = nuovo # CAMBIA QUI PER CAMBIARE GRAFICO
 names = ["Timestamp","AccelX","AccelY","AccelZ","DoorHall","FloorHall"]
 df = pd.read_csv(choose, names=names, header=0)
 
