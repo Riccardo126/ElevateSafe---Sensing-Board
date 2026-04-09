@@ -4,8 +4,8 @@
 
 // --- TASK 2: Communication - sends data blocks ---
 void vCommTask(void *pvParameters) {
-  uint8_t blockBuffer[SAMPLES_PER_BLOCK * sizeof(SensorData)];
   size_t totalBytes = SAMPLES_PER_BLOCK * sizeof(SensorData);
+  uint8_t blockBuffer[totalBytes];
   BlockHeader header;
   header.magicByte = 0xAA;  // Fixed sync marker
   

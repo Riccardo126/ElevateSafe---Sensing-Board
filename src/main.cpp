@@ -162,21 +162,40 @@ void setup() {
   // 1. Initialize the second I2C bus (Wire) with your custom pins
 
   Wire.begin(IMU_SDA_PIN, IMU_SCL_PIN);  // Initialize directly with IMU pins
-  Wire.setClock(400000);
+  pinMode(IMU_SDA_PIN, INPUT_PULLUP);  // Enable internal pullup
+  pinMode(IMU_SCL_PIN, INPUT_PULLUP);  // Enable internal pullup
+  Wire.setClock(400000);  // Back to 400kHz
+  delay(100);  // Wait for sensor to power up
   scanI2C(Wire, "Wire(IMU)");
+  
+  // Manual check of WHO_AM_I register
+  Wire.beginTransmission(0x68);
+  Wire.write(0x75); // WHO_AM_I register
+  Wire.endTransmission(false);
+  Wire.requestFrom(0x68, 1);
+  if (Wire.available()) {
+    uint8_t who = Wire.read();
+    debugPrint("WHO_AM_I: 0x%02X (expected 0x68 for MPU6050, 0x70 for MPU6500)\n", who);
+  } else {
+    debugPrintln("Failed to read WHO_AM_I register");
+  }
   
 
   #ifdef HAS_LSM6DS3
-    status_t imuStatus = !myIMU.begin();
+    debugPrintln("Initializing LSM6DS3...");
+    int imuStatus = myIMU.begin();
   #endif
   #ifdef HAS_MPU6050
-    bool imuStatus = myIMU.begin();
-    myIMU.setAccelerometerRange(MPU6050_RANGE_2_G);
+    debugPrintln("Initializing MPU6050...");
+    bool imuInit = myIMU.begin();
+    int imuStatus = imuInit ? 0 : 1;
+    if (imuInit) myIMU.setAccelerometerRange(MPU6050_RANGE_2_G);
   #endif  
 
   debugPrint("IMU begin status: %d (0=IMU_SUCCESS, 1=IMU_ERROR)\n", imuStatus);
   if (imuStatus != 0) {
     debugPrintln("ERROR: IMU initialization failed!");
+    while(1); // halt
   }
 
   debugPrintln("[BOOT] Initializing FreeRTOS objects");
@@ -232,8 +251,8 @@ void setup() {
 
   // Create Tasks
   xTaskCreatePinnedToCore(SensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
-  xTaskCreatePinnedToCore(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle, 0);
-  xTaskCreate(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
+  xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
+  xTaskCreatePinnedToCore(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle, 0);
 }
 
 void loop() {

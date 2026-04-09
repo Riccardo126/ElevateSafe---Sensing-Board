@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Arduino.h>
 #include <Wire.h>
 #include <esp_timer.h>
