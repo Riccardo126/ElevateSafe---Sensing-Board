@@ -19,13 +19,17 @@ void vCommTask(void *pvParameters) {
       lastSyncMarker = millis();
     }
     
-    // Block until we have a full block of 50 samples
+    // Block until we have a full block of 50 samples.
     size_t receivedBytes = xStreamBufferReceive(
-      sensorStreamBuffer, 
-      blockBuffer, 
-      totalBytes, 
-      10  // timeout 10ms instead of portMAX_DELAY
+      sensorStreamBuffer,
+      blockBuffer,
+      totalBytes,
+      portMAX_DELAY
     );
+
+    if (receivedBytes != totalBytes) {
+      debugPrint("[CommTask] Unexpected stream receive size: %u\n", (unsigned)receivedBytes);
+    }
     
     if (receivedBytes == totalBytes) {
       if (DEBUG_MODE) {

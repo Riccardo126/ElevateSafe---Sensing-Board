@@ -55,9 +55,9 @@ extern const int OLED_VEXT_PIN;
 #ifdef HAS_OLED
   #include <Adafruit_GFX.h>
   #include <Adafruit_SSD1306.h>
-  extern constexpr int SCREEN_WIDTH;
-  extern constexpr int SCREEN_HEIGHT;
-  extern constexpr int OLED_RESET;
+  extern const int SCREEN_WIDTH;
+  extern const int SCREEN_HEIGHT;
+  extern const int OLED_RESET;
   extern Adafruit_SSD1306 display;
 #endif
 

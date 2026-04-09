@@ -17,9 +17,9 @@ void SensorTask(void *pvParameters) {
       #ifdef HAS_MPU6050
         sensors_event_t accel, gyro, temp;
         myIMU.getEvent(&accel, &gyro, &temp);
-        currentData.accelXYZ[0] = (accel.acceleration.x / 9.81f) - CALIB_X;
-        currentData.accelXYZ[1] = (accel.acceleration.y / 9.81f) - CALIB_Y;
-        currentData.accelXYZ[2] = (accel.acceleration.z / 9.81f) - CALIB_Z; // / 9.81f it measures differently
+        currentData.accelXYZ[0] = (accel.acceleration.x ) - CALIB_X;
+        currentData.accelXYZ[1] = (accel.acceleration.y ) - CALIB_Y;
+        currentData.accelXYZ[2] = (accel.acceleration.z ) - CALIB_Z; // / 9.81f it measures differently
       #endif
       currentData.doorHall = 0;  // Placeholder
       currentData.floorHall = 0;
@@ -31,8 +31,11 @@ void SensorTask(void *pvParameters) {
         xSemaphoreGive(displayMutex);
       }
 
-      // Write to StreamBuffer (non-blocking)
-      xStreamBufferSend(sensorStreamBuffer, &currentData, sizeof(SensorData), 0);
+      // Write to StreamBuffer with a small timeout so we can detect failures.
+      size_t bytesSent = xStreamBufferSend(sensorStreamBuffer, &currentData, sizeof(SensorData), pdMS_TO_TICKS(10));
+      if (bytesSent != sizeof(SensorData)) {
+        debugPrint("[SensorTask] StreamBuffer send failed (%u/%u)\n", (unsigned)bytesSent, (unsigned)sizeof(SensorData));
+      }
     }
   }
 }

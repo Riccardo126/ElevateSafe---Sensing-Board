@@ -63,9 +63,9 @@ const int OLED_VEXT_PIN = 36;
 #ifdef HAS_OLED
   #include <Adafruit_GFX.h>
   #include <Adafruit_SSD1306.h>
-  constexpr int SCREEN_WIDTH = 128;
-  constexpr int SCREEN_HEIGHT = 64;
-  constexpr int OLED_RESET = -1;
+  const int SCREEN_WIDTH = 128;
+  const int SCREEN_HEIGHT = 64;
+  const int OLED_RESET = -1;
   Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, OLED_RESET);
 #endif
 
@@ -149,7 +149,7 @@ void setup() {
 
     // Initialize I2C on dedicated OLED pins and scan for devices.
     Wire1.begin(OLED_SDA_PIN, OLED_SCL_PIN);  // 17, 18 for OLED
-    Wire1.setClock(400000);  // Set for OLED
+    Wire1.setClock(100000);  // Set to 100kHz
     scanI2C(Wire1, "Wire1(OLED)");
 
     // Keep static "Hello" text on-screen.
@@ -164,22 +164,10 @@ void setup() {
   Wire.begin(IMU_SDA_PIN, IMU_SCL_PIN);  // Initialize directly with IMU pins
   pinMode(IMU_SDA_PIN, INPUT_PULLUP);  // Enable internal pullup
   pinMode(IMU_SCL_PIN, INPUT_PULLUP);  // Enable internal pullup
-  Wire.setClock(400000);  // Back to 400kHz
+  Wire.setClock(100000);  // Set to 100kHz
   delay(100);  // Wait for sensor to power up
   scanI2C(Wire, "Wire(IMU)");
-  
-  // Manual check of WHO_AM_I register
-  Wire.beginTransmission(0x68);
-  Wire.write(0x75); // WHO_AM_I register
-  Wire.endTransmission(false);
-  Wire.requestFrom(0x68, 1);
-  if (Wire.available()) {
-    uint8_t who = Wire.read();
-    debugPrint("WHO_AM_I: 0x%02X (expected 0x68 for MPU6050, 0x70 for MPU6500)\n", who);
-  } else {
-    debugPrintln("Failed to read WHO_AM_I register");
-  }
-  
+   
 
   #ifdef HAS_LSM6DS3
     debugPrintln("Initializing LSM6DS3...");
