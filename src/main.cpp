@@ -4,7 +4,6 @@
 #include <Adafruit_SSD1306.h>
 #include <esp_timer.h>
 #include <freertos/stream_buffer.h>
-// #include "ElevateSafe_TinyML.h" // Exported from Edge Impulse
 
 // ========== DEBUG MODE CONFIGURATION ==========
 // Set to true for debug messages, false for actual serial communication
@@ -52,6 +51,7 @@ esp_timer_handle_t samplingTimer;
 
 // Global variable to store latest Z value for display
 volatile float latestAccelZ = 0.0;
+// Ensures deterministic, jitter-free sampling at exactly 1000 Hz
 SemaphoreHandle_t displayMutex;
 
 // Define your new I2C pins
@@ -75,22 +75,11 @@ LSM6DS3 myIMU(I2C_MODE, 0x6B);
 const int HALL_DOOR_PIN = 1; 
 const int HALL_FLOOR_PIN = 2;
 
-// Calibration offsets for IMU (auto-calibrated on startup)
-float CALIB_X = 0.0;
-float CALIB_Y = 0.0;
-float CALIB_Z = 0.0;
-
 // Struct for our sensor data
 struct SensorData {
   float accel[3];  // [0]=X, [1]=Y, [2]=Z
   int doorHall;
   int floorHall;
-};
-
-// Block header for synchronization
-struct BlockHeader {
-  uint8_t magicByte;    // 0xAA - fixed marker
-  uint8_t blockSeq;     // Sequence number (0-255, wraps around)
 };
 
 // Counter for block sequence
@@ -128,9 +117,9 @@ void SensorTask(void *pvParameters) {
   for (;;) {
     // Wait for hardware timer to trigger (1kHz)
     if (xSemaphoreTake(samplingTrigger, portMAX_DELAY) == pdTRUE) {
-      currentData.accel[0] = myIMU.readFloatAccelX() - CALIB_X;
-      currentData.accel[1] = myIMU.readFloatAccelY() - CALIB_Y;
-      currentData.accel[2] = myIMU.readFloatAccelZ() - CALIB_Z;
+      currentData.accel[0] = myIMU.readFloatAccelX();
+      currentData.accel[1] = myIMU.readFloatAccelY();
+      currentData.accel[2] = myIMU.readFloatAccelZ();
       currentData.doorHall = 0;  // Placeholder
       currentData.floorHall = 0;  // Placeholder
 
@@ -151,26 +140,20 @@ void SensorTask(void *pvParameters) {
 void vCommTask(void *pvParameters) {
   uint8_t blockBuffer[SAMPLES_PER_BLOCK * sizeof(SensorData)];
   size_t totalBytes = SAMPLES_PER_BLOCK * sizeof(SensorData);
-  BlockHeader header;
-  header.magicByte = 0xAA;  // Fixed sync marker
   
-  // Send a sync marker every 100ms to help with synchronization
-  uint32_t lastSyncMarker = millis();
+  uint32_t blocksSent = 0;
+  debugPrintln("[CommTask] Started");  // <-- ADD THIS
   
   for (;;) {
-    // Periodically send just the sync byte if buffer is empty (for sync help)
-    if (!DEBUG_MODE && (millis() - lastSyncMarker) > 100) {
-      Serial.write(0xAA);
-      lastSyncMarker = millis();
-    }
-    
     // Block until we have a full block of 50 samples
     size_t receivedBytes = xStreamBufferReceive(
       sensorStreamBuffer, 
       blockBuffer, 
       totalBytes, 
-      10  // timeout 10ms instead of portMAX_DELAY
+      portMAX_DELAY  // Wait indefinitely for full block
     );
+    
+    debugPrint("[CommTask] Got %d bytes\n", receivedBytes);  // <-- ADD THIS
     
     if (receivedBytes == totalBytes) {
       if (DEBUG_MODE) {
@@ -194,10 +177,10 @@ void vCommTask(void *pvParameters) {
         debugPrint("[CommTask] Block #%lu | Z: avg=%.3f min=%.3f max=%.3f g\n", 
                    millis(), avgZ, minZ, maxZ);
       } else {
-        // Send block header + data in communication mode
-        header.blockSeq = blockSequence++;
-        Serial.write((uint8_t*)&header, sizeof(BlockHeader));
+        // Send block through serial with frame synchronization preamble (0xAA)
+        Serial.write(0xAA); // Preamble byte
         Serial.write(blockBuffer, totalBytes);
+        blocksSent++;
       }
     }
   }
@@ -235,7 +218,7 @@ void setup() {
     Serial.begin(115200); 
   }
   else {
-    Serial.begin(2000000);
+    Serial.begin(921600);
   }
   // Give the monitor a short window to attach after reset.
   unsigned long serialStart = millis();

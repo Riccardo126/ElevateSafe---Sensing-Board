@@ -2,10 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-small = "tools\sampling_elevate_safe_2026-04-03_22-15-18.csv"
-onoff = "tools\sampling_2026-04-04_17-18-33_on_off_boarding.csv"
-updown = "tools\sampling_2026-04-04_17-20-04_up_and_down.csv"
-nuovo = "tools/sampling_2026-04-08_16-56-03.csv"
+nuovo = "tools/sampling_2026-04-09_22-35-39.csv"
 choose = nuovo # CAMBIA QUI PER CAMBIARE GRAFICO
 names = ["Timestamp","AccelX","AccelY","AccelZ","DoorHall","FloorHall"]
 df = pd.read_csv(choose, names=names, header=0)
