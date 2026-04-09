@@ -1,0 +1,59 @@
+#include "comm_task.h"
+#include "shared.h"
+#include "config.h"
+
+// --- TASK 2: Communication - sends data blocks ---
+void vCommTask(void *pvParameters) {
+  uint8_t blockBuffer[SAMPLES_PER_BLOCK * sizeof(SensorData)];
+  size_t totalBytes = SAMPLES_PER_BLOCK * sizeof(SensorData);
+  BlockHeader header;
+  header.magicByte = 0xAA;  // Fixed sync marker
+  
+  // Send a sync marker every 100ms to help with synchronization
+  uint32_t lastSyncMarker = millis();
+  
+  for (;;) {
+    // Periodically send just the sync byte if buffer is empty (for sync help)
+    if (!DEBUG_MODE && (millis() - lastSyncMarker) > 100) {
+      Serial.write(0xAA);
+      lastSyncMarker = millis();
+    }
+    
+    // Block until we have a full block of 50 samples
+    size_t receivedBytes = xStreamBufferReceive(
+      sensorStreamBuffer, 
+      blockBuffer, 
+      totalBytes, 
+      10  // timeout 10ms instead of portMAX_DELAY
+    );
+    
+    if (receivedBytes == totalBytes) {
+      if (DEBUG_MODE) {
+        // Cast blockBuffer to SensorData array
+        SensorData* dataBlock = (SensorData*)blockBuffer;
+        
+        // Calculate statistics for Z axis (accel[2])
+        float minZ = dataBlock[0].accelXYZ[2];
+        float maxZ = dataBlock[0].accelXYZ[2];
+        float sumZ = 0.0;
+        
+        for (int i = 0; i < SAMPLES_PER_BLOCK; i++) {
+          float z = dataBlock[i].accelXYZ[2];
+          sumZ += z;
+          if (z < minZ) minZ = z;
+          if (z > maxZ) maxZ = z;
+        }
+        float avgZ = sumZ / SAMPLES_PER_BLOCK;
+        
+        // Display block statistics
+        debugPrint("[CommTask] Block #%lu | Z: avg=%.3f min=%.3f max=%.3f g\n", 
+                   millis(), avgZ, minZ, maxZ);
+      } else {
+        // Send block header + data in communication mode
+        header.blockSeq = blockSequence++;
+        Serial.write((uint8_t*)&header, sizeof(BlockHeader));
+        Serial.write(blockBuffer, totalBytes);
+      }
+    }
+  }
+}

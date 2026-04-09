@@ -1,14 +1,18 @@
+#include <Arduino.h>
 #include <Wire.h>
-#include <SparkFunLSM6DS3.h> // Example library
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 #include <esp_timer.h>
 #include <freertos/stream_buffer.h>
+#include "display_task.h"
+#include "comm_task.h"
+#include "sensor_task.h"
+#include "shared.h"
+#include "config.h"
+
 // #include "ElevateSafe_TinyML.h" // Exported from Edge Impulse
 
 // ========== DEBUG MODE CONFIGURATION ==========
 // Set to true for debug messages, false for actual serial communication
-bool DEBUG_MODE = false;
+bool DEBUG_MODE = true;
 
 // Helper functions for debug/communication output
 void debugPrint(const char* format, ...) {
@@ -44,19 +48,9 @@ SemaphoreHandle_t samplingTrigger;
 // Timer handle
 esp_timer_handle_t samplingTimer;
 
-
-#define SAMPLE_RATE_HZ 1000 //max 1600 for LSMDS3
-#define SAMPLES_PER_BLOCK 50
-#define TIMER_PERIOD_US (1000000 / SAMPLE_RATE_HZ)  // 1000 us = 1ms
-#define STREAM_BUFFER_SIZE (SAMPLES_PER_BLOCK * sizeof(SensorData) * 2)
-
 // Global variable to store latest Z value for display
 volatile float latestAccelZ = 0.0;
 SemaphoreHandle_t displayMutex;
-
-// Define your new I2C pins
-const int IMU_SDA_PIN = 26; //verde
-const int IMU_SCL_PIN = 27; //arancione
 
 // Heltec WiFi LoRa 32 V3 onboard OLED pins
 const int OLED_SDA_PIN = 17;
@@ -65,31 +59,36 @@ const int OLED_RST_PIN = 21;
 const int OLED_VEXT_PIN = 36;
 
 // Heltec WiFi LoRa 32 V3 onboard OLED (usually I2C address 0x3C)
-constexpr int SCREEN_WIDTH = 128;
-constexpr int SCREEN_HEIGHT = 64;
-constexpr int OLED_RESET = -1;
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, OLED_RESET);
+// OLED — solo su Heltec
+#ifdef HAS_OLED
+  #include <Adafruit_GFX.h>
+  #include <Adafruit_SSD1306.h>
+  constexpr int SCREEN_WIDTH = 128;
+  constexpr int SCREEN_HEIGHT = 64;
+  constexpr int OLED_RESET = -1;
+  Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, OLED_RESET);
+#endif
 
 // Sensor Instances
-LSM6DS3 myIMU(I2C_MODE, 0x6B);
-const int HALL_DOOR_PIN = 1; 
+// IMU — libreria diversa per board diversa
+#ifdef HAS_LSM6DS3
+  #include <SparkFunLSM6DS3.h>
+  LSM6DS3 myIMU(I2C_MODE, 0x6B);
+#endif
+
+#ifdef HAS_MPU6050
+  #include <Adafruit_MPU6050.h>
+  #include <Adafruit_Sensor.h>
+  Adafruit_MPU6050 myIMU;
+#endif
+
+const int HALL_DOOR_PIN = 1;
 const int HALL_FLOOR_PIN = 2;
 
 // Calibration offsets for IMU (auto-calibrated on startup)
-float CALIB_X, CALIB_Y, CALIB_Z = 0.0;
+float CALIB_X = 0.0, CALIB_Y = 0.0, CALIB_Z = 0.0;
 
-// Struct for our sensor data
-struct SensorData {
-  float accelXYZ[3];  // [0]=X, [1]=Y, [2]=Z
-  int doorHall;
-  int floorHall;
-};
-
-// Block header for synchronization
-struct BlockHeader {
-  uint8_t magicByte;    // 0xAA - fixed marker
-  uint8_t blockSeq;     // Sequence number (0-255, wraps around)
-};
+// Block header for synchronization - defined in shared.h
 
 // Counter for block sequence
 volatile uint8_t blockSequence = 0;
@@ -119,113 +118,7 @@ void timerCallback(void *arg) {
   }
 }
 
-// --- TASK 1: Sensor Reading (triggered by hardware timer) ---
-void SensorTask(void *pvParameters) {
-  SensorData currentData;
 
-  for (;;) {
-    // Wait for hardware timer to trigger (1kHz)
-    if (xSemaphoreTake(samplingTrigger, portMAX_DELAY) == pdTRUE) {
-      currentData = {.accelXYZ = {myIMU.readFloatAccelX() - CALIB_X,
-                                  myIMU.readFloatAccelY() - CALIB_Y,
-                                  myIMU.readFloatAccelZ() - CALIB_Z},
-                     .doorHall = 0,  // Placeholder
-                     .floorHall = 0};  // Placeholder
-
-      // Update global variable for DisplayTask
-      if (xSemaphoreTake(displayMutex, 0) == pdTRUE) {
-        latestAccelZ = currentData.accelXYZ[2];
-        xSemaphoreGive(displayMutex);
-      }
-
-      // Write to StreamBuffer (non-blocking)
-      xStreamBufferSend(sensorStreamBuffer, &currentData, sizeof(SensorData), 0);
-    }
-  }
-}
-
-
-// --- TASK 2: Communication - sends data blocks ---
-void vCommTask(void *pvParameters) {
-  uint8_t blockBuffer[SAMPLES_PER_BLOCK * sizeof(SensorData)];
-  size_t totalBytes = SAMPLES_PER_BLOCK * sizeof(SensorData);
-  BlockHeader header;
-  header.magicByte = 0xAA;  // Fixed sync marker
-  
-  // Send a sync marker every 100ms to help with synchronization
-  uint32_t lastSyncMarker = millis();
-  
-  for (;;) {
-    // Periodically send just the sync byte if buffer is empty (for sync help)
-    if (!DEBUG_MODE && (millis() - lastSyncMarker) > 100) {
-      Serial.write(0xAA);
-      lastSyncMarker = millis();
-    }
-    
-    // Block until we have a full block of 50 samples
-    size_t receivedBytes = xStreamBufferReceive(
-      sensorStreamBuffer, 
-      blockBuffer, 
-      totalBytes, 
-      10  // timeout 10ms instead of portMAX_DELAY
-    );
-    
-    if (receivedBytes == totalBytes) {
-      if (DEBUG_MODE) {
-        // Cast blockBuffer to SensorData array
-        SensorData* dataBlock = (SensorData*)blockBuffer;
-        
-        // Calculate statistics for Z axis (accel[2])
-        float minZ, maxZ = dataBlock[0].accelXYZ[2];
-        float sumZ = 0.0;
-        
-        for (int i = 0; i < SAMPLES_PER_BLOCK; i++) {
-          float z = dataBlock[i].accelXYZ[2];
-          sumZ += z;
-          if (z < minZ) minZ = z;
-          if (z > maxZ) maxZ = z;
-        }
-        float avgZ = sumZ / SAMPLES_PER_BLOCK;
-        
-        // Display block statistics
-        debugPrint("[CommTask] Block #%lu | Z: avg=%.3f min=%.3f max=%.3f g\n", 
-                   millis(), avgZ, minZ, maxZ);
-      } else {
-        // Send block header + data in communication mode
-        header.blockSeq = blockSequence++;
-        Serial.write((uint8_t*)&header, sizeof(BlockHeader));
-        Serial.write(blockBuffer, totalBytes);
-      }
-    }
-  }
-}
-
-
-// --- TASK 3: Display Update (2Hz) ---
-void DisplayTask(void *pvParameters) {
-  TickType_t xLastWakeTime = xTaskGetTickCount();
-  const TickType_t xFrequency = pdMS_TO_TICKS(500); // 2Hz to reduce flicker
-
-  for(;;) {
-    if (xSemaphoreTake(displayMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-      float zValue = latestAccelZ;
-      xSemaphoreGive(displayMutex);
-
-      display.clearDisplay();
-      display.setTextSize(2);
-      display.setTextColor(SSD1306_WHITE);
-      display.setCursor(0, 0);
-      display.println("Z Accel:");
-      display.setTextSize(1);
-      display.setCursor(0, 25);
-      display.print(zValue, 3);  // Print with 3 decimal places
-      display.println(" g");
-      display.display();
-    }
-
-    vTaskDelayUntil(&xLastWakeTime, xFrequency);
-  }
-}
 
 void setup() {
   if(DEBUG_MODE) {
@@ -243,34 +136,44 @@ void setup() {
   delay(3000);
 
   // Heltec V3 powers OLED through Vext (active LOW).
-  pinMode(OLED_VEXT_PIN, OUTPUT);
-  digitalWrite(OLED_VEXT_PIN, LOW);
+  #ifdef HAS_OLED
+    pinMode(OLED_VEXT_PIN, OUTPUT);
+    digitalWrite(OLED_VEXT_PIN, LOW);
 
-  // Hardware reset line for onboard OLED.
-  pinMode(OLED_RST_PIN, OUTPUT);
-  digitalWrite(OLED_RST_PIN, LOW);
-  delay(20);
-  digitalWrite(OLED_RST_PIN, HIGH);
-  delay(20);
+    // Hardware reset line for onboard OLED.
+    pinMode(OLED_RST_PIN, OUTPUT);
+    digitalWrite(OLED_RST_PIN, LOW);
+    delay(20);
+    digitalWrite(OLED_RST_PIN, HIGH);
+    delay(20);
 
-  // Initialize I2C on dedicated OLED pins and scan for devices.
-  Wire1.begin(OLED_SDA_PIN, OLED_SCL_PIN);  // 17, 18 for OLED
-  Wire1.setClock(400000);  // Set for OLED
-  scanI2C(Wire1, "Wire1(OLED)");
+    // Initialize I2C on dedicated OLED pins and scan for devices.
+    Wire1.begin(OLED_SDA_PIN, OLED_SCL_PIN);  // 17, 18 for OLED
+    Wire1.setClock(400000);  // Set for OLED
+    scanI2C(Wire1, "Wire1(OLED)");
 
-  // Keep static "Hello" text on-screen.
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C, true, false)) {
-    debugPrintln("OLED init failed at 0x3C. Check I2C scan output.");
-  } else {
-    debugPrintln("OLED init OK");
-  }
-
+    // Keep static "Hello" text on-screen.
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C, true, false)) {
+      debugPrintln("OLED init failed at 0x3C. Check I2C scan output.");
+    } else {
+      debugPrintln("OLED init OK");
+    }
+  #endif
   // 1. Initialize the second I2C bus (Wire) with your custom pins
 
   Wire.begin(IMU_SDA_PIN, IMU_SCL_PIN);  // Initialize directly with IMU pins
   Wire.setClock(400000);
   scanI2C(Wire, "Wire(IMU)");
-  status_t imuStatus = myIMU.begin();
+  
+
+  #ifdef HAS_LSM6DS3
+    status_t imuStatus = !myIMU.begin();
+  #endif
+  #ifdef HAS_MPU6050
+    bool imuStatus = myIMU.begin();
+    myIMU.setAccelerometerRange(MPU6050_RANGE_2_G);
+  #endif  
+
   debugPrint("IMU begin status: %d (0=IMU_SUCCESS, 1=IMU_ERROR)\n", imuStatus);
   if (imuStatus != 0) {
     debugPrintln("ERROR: IMU initialization failed!");
