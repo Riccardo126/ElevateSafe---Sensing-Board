@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-nuovo = "tools/sampling_2026-04-09_22-35-39.csv"
+nuovo = "tools/sampling_2026-04-10_09-03-27_updown_2fl.csv"
 choose = nuovo # CAMBIA QUI PER CAMBIARE GRAFICO
 names = ["Timestamp","AccelX","AccelY","AccelZ","DoorHall","FloorHall"]
 df = pd.read_csv(choose, names=names, header=0)
@@ -35,6 +35,6 @@ for ax in axes:
     ax.grid(True, linewidth=0.3, alpha=0.5)
  
 plt.tight_layout()
-plt.savefig(f"plot_{choose[35:-4]}.png", dpi=100)
+plt.savefig(f"plot_2fl.png", dpi=100)
 plt.show()
  
