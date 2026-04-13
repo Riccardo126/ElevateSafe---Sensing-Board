@@ -18,11 +18,14 @@ void debugPrintln(const char* message);
 
 // Task Handles
 extern TaskHandle_t SensorTaskHandle;
+extern TaskHandle_t FilterTaskHandle;
 extern TaskHandle_t DisplayTaskHandle;
 extern TaskHandle_t CommTaskHandle;
 
 // StreamBuffer for efficient binary data transfer
 extern StreamBufferHandle_t sensorStreamBuffer;
+extern StreamBufferHandle_t filteredSensorStreamBuffer;
+
 
 // Semaphore to trigger sampling at precise 1kHz
 extern SemaphoreHandle_t samplingTrigger;

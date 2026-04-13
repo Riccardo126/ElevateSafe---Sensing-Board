@@ -12,16 +12,10 @@ void vCommTask(void *pvParameters) {
   // Send a sync marker every 100ms to help with synchronization
   uint32_t lastSyncMarker = millis();
   
-  for (;;) {
-    // Periodically send just the sync byte if buffer is empty (for sync help)
-    if (!DEBUG_MODE && (millis() - lastSyncMarker) > 100) {
-      Serial.write(0xAA);
-      lastSyncMarker = millis();
-    }
-    
+  for (;;) {    
     // Block until we have a full block of 50 samples.
     size_t receivedBytes = xStreamBufferReceive(
-      sensorStreamBuffer,
+      filteredSensorStreamBuffer,
       blockBuffer,
       totalBytes,
       portMAX_DELAY

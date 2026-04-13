@@ -5,6 +5,7 @@
 #include "display_task.h"
 #include "comm_task.h"
 #include "sensor_task.h"
+#include "filter_task.h"
 #include "shared.h"
 #include "config.h"
 
@@ -36,11 +37,13 @@ void debugPrintln(const char* message) {
 
 // Task Handles
 TaskHandle_t SensorTaskHandle;
+TaskHandle_t FilterTaskHandle;
 TaskHandle_t DisplayTaskHandle;
 TaskHandle_t CommTaskHandle;
 
 // StreamBuffer for efficient binary data transfer
 StreamBufferHandle_t sensorStreamBuffer;
+StreamBufferHandle_t filteredSensorStreamBuffer;
 
 // Semaphore to trigger sampling at precise 1kHz
 SemaphoreHandle_t samplingTrigger;
@@ -86,7 +89,7 @@ const int HALL_DOOR_PIN = 1;
 const int HALL_FLOOR_PIN = 2;
 
 // Calibration offsets for IMU (auto-calibrated on startup)
-float CALIB_X = 0.0, CALIB_Y = 0.0, CALIB_Z = 0.0;
+float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 9.8;
 
 // Block header for synchronization - defined in shared.h
 
@@ -200,11 +203,15 @@ void setup() {
     STREAM_BUFFER_SIZE,
     SAMPLES_PER_BLOCK * sizeof(SensorData)  // Trigger level: one full block
   );
+  filteredSensorStreamBuffer = xStreamBufferCreate(
+    STREAM_BUFFER_SIZE,
+    SAMPLES_PER_BLOCK * sizeof(SensorData)  // Trigger level: one full block
+  );
   
-  if (sensorStreamBuffer == NULL) {
+  if (sensorStreamBuffer == NULL || filteredSensorStreamBuffer == NULL) {
     debugPrintln("ERROR: StreamBuffer creation failed!");
     while(1); // halt
-  }
+  } 
 
   // Create sampling trigger semaphore
   samplingTrigger = xSemaphoreCreateBinary();
@@ -239,8 +246,9 @@ void setup() {
 
   // Create Tasks
   xTaskCreatePinnedToCore(SensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
+  xTaskCreatePinnedToCore(FilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
   xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
-  xTaskCreatePinnedToCore(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle, 0);
+  xTaskCreate(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }
 
 void loop() {
