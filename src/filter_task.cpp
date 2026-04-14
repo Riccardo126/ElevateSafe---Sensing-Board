@@ -3,11 +3,11 @@
 #include "config.h"
 
 // --- TASK 1.5 : Data Filtering
-#define WINDOW_SIZE SAMPLES_PER_BLOCK / 2  // Moving average window size 
+#define WINDOW_SIZE SAMPLES_PER_BLOCK / 3  // Moving average window size 
 #define SLIDING_STEP WINDOW_SIZE / 3 // Number of samples to slide the window each time
-#define ALPHA 0.2f  // peso exponential moving average (0=lento, 1=veloce)
-#define ANOMALY_THRESHOLD_X 4 // soglia di deviazione per segnalare anomalie (in g?) 
-#define ANOMALY_THRESHOLD_Y 4 // soglia di deviazione per segnalare anomalie (in g?) 
+#define ALPHA 0.1f  // peso exponential moving average (0=lento, 1=veloce)
+#define ANOMALY_THRESHOLD_X 14 // soglia di deviazione per segnalare anomalie (in g?) 
+#define ANOMALY_THRESHOLD_Y 14 // soglia di deviazione per segnalare anomalie (in g?) 
 #define ANOMALY_THRESHOLD_Z 20 // soglia di deviazione per segnalare anomalie (in g?) 
 
 void FilterTask(void *pvParameters) {

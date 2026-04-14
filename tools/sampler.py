@@ -12,167 +12,124 @@ BAUD_RATE = 921600
 SAMPLES_PER_BLOCK = 50
 BYTES_PER_SAMPLE = 20
 BLOCK_SIZE = SAMPLES_PER_BLOCK * BYTES_PER_SAMPLE
-PREAMBLE = 0xAA
+# PREAMBLE LUNGO: Fondamentale per evitare i falsi positivi
+PREAMBLE = b'\xAA\xBB\xCC\xDD' 
 CSV_DIR = 'tools'
 
-# State
+# --- STATE ---
 recording = False
 file_handle = None
 block_count = 0
 stop_event = threading.Event()
+file_lock = threading.Lock() # Per evitare crash tra thread
 
 def get_progressive_filename():
-    """Generate filename with timestamp and progressive number"""
-    # Create data directory if it doesn't exist
     os.makedirs(CSV_DIR, exist_ok=True)
-    
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    counter = 1
-    filename = os.path.join(CSV_DIR, f"sampling_{timestamp}.csv")
-    
-    # Check for existing files with same timestamp
-    base_filename = os.path.join(CSV_DIR, f"sampling_{timestamp}")
-    while os.path.exists(f"{base_filename}_{counter:02d}.csv"):
-        counter += 1
-    
-    if counter > 1:
-        filename = f"{base_filename}_{counter:02d}.csv"
-    
-    return filename
+    return os.path.join(CSV_DIR, f"sampling_{timestamp}.csv")
 
 def unpack_sensor_data(data):
-    """Unpack binary SensorData from 20-byte chunk"""
+    # <fffii = Little Endian: 3 float, 2 int
     accel_x, accel_y, accel_z, door_hall, floor_hall = struct.unpack('<fffii', data)
-    return {
-        'AccelX': accel_x,
-        'AccelY': accel_y,
-        'AccelZ': accel_z,
-        'DoorHall': door_hall,
-        'FloorHall': floor_hall
-    }
-
-def write_csv_header(f):
-    """Write CSV header"""
-    f.write("Timestamp,AccelX,AccelY,AccelZ,DoorHall,FloorHall\n")
-    f.flush()
+    return (accel_x, accel_y, accel_z, door_hall, floor_hall)
 
 def input_thread():
-    """Thread for handling user input"""
     global recording, file_handle, block_count
-    
     while not stop_event.is_set():
         try:
             cmd = input().strip().lower()
-            
-            if cmd == 'start' or cmd == 's':
+            if cmd in ['start', 's']:
                 if not recording:
-                    filename = get_progressive_filename()
-                    file_handle = open(filename, 'w')
-                    write_csv_header(file_handle)
-                    recording = True
-                    block_count = 0
-                    print(f"[INFO] Recording started -> {filename}")
-                else:
-                    print("[INFO] Already recording")
-                    
-            elif cmd == 'stop' or cmd == 'x':
+                    fname = get_progressive_filename()
+                    with file_lock:
+                        file_handle = open(fname, 'w')
+                        file_handle.write("Timestamp,AccelX,AccelY,AccelZ,DoorHall,FloorHall\n")
+                        recording = True
+                        block_count = 0
+                    print(f"[INFO] Recording started -> {fname}")
+            elif cmd in ['stop', 'x']:
                 if recording:
-                    recording = False
-                    if file_handle:
-                        file_handle.close()
-                        file_handle = None
-                    print(f"[INFO] Recording stopped ({block_count} blocks saved)")
-                else:
-                    print("[INFO] Not recording")
-                    
-            elif cmd == 'quit' or cmd == 'q':
-                print("[INFO] Exiting...")
+                    with file_lock:
+                        recording = False
+                        if file_handle:
+                            file_handle.close()
+                            file_handle = None
+                    print(f"[INFO] Stopped. {block_count} blocks saved.")
+            elif cmd in ['quit', 'q']:
                 stop_event.set()
-                break
-                
-            elif cmd in ['help', 'h', '?']:
-                print_help()
-                
-        except EOFError:
-            break
-        except KeyboardInterrupt:
-            stop_event.set()
-            break
-
-def print_help():
-    """Print help message"""
-    print("""
-[Commands]
-  start (s)     - Start recording
-  stop (x)      - Stop recording
-  quit (q)      - Exit program
-  help (h)      - Show this help
-""")
+        except EOFError: break
 
 def main():
     global recording, file_handle, block_count
-    
     try:
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-        print(f"[INFO] Connected to {SERIAL_PORT} at {BAUD_RATE} baud")
-        print_help()
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.5)
+        ser.flushInput()
+        print(f"[DEBUG] Serial port timeout set to 0.5s")
         
-        # Start input thread
         input_th = threading.Thread(target=input_thread, daemon=True)
         input_th.start()
         
-        block_num = 0
+        #print(f"[INFO] Connected to {SERIAL_PORT}. Cerco PREAMBLE {PREAMBLE.hex().upper()}...")
+        
+        sliding_window = b""
+        byte_counter = 0
+        preamble_found_count = 0
+        last_preamble_pos = None
         
         while not stop_event.is_set():
-            # Wait for preamble byte
-            byte = ser.read(1)
-            if not byte:
-                continue
+            # 1. SINCRONIZZAZIONE (Sliding Window)
+            char = ser.read(1)
+            if not char: continue
             
-            if byte[0] == PREAMBLE:
-                # Read full block (1000 bytes)
+            byte_counter += 1
+            sliding_window += char
+            if len(sliding_window) > 4:
+                sliding_window = sliding_window[-4:]
+            
+            # Debug: stampa ogni 1000 byte se preamble non trovato
+            if byte_counter % 1000 == 0:
+                print(f"[DEBUG] Ricevuti {byte_counter} byte, ultimi 4: {sliding_window.hex().upper()} (cerco {PREAMBLE.hex().upper()})")
+            
+            if sliding_window == PREAMBLE:
+                preamble_found_count += 1
+                if last_preamble_pos is None:
+                    print(f"[SUCCESS] Preamble trovato! #{preamble_found_count} @ byte {byte_counter}")
+                else:
+                    gap = byte_counter - last_preamble_pos
+                    #print(f"[SUCCESS] Preamble trovato! #{preamble_found_count} @ byte {byte_counter} (gap={gap})")
+                last_preamble_pos = byte_counter
+                # 2. LETTURA BLOCCO
                 block_data = ser.read(BLOCK_SIZE)
+                byte_counter += len(block_data)
+                if len(block_data) < BLOCK_SIZE:
+                    print(f"[WARN] Blocco incompleto: letti {len(block_data)}/{BLOCK_SIZE} byte")
+                    continue
                 
-                if len(block_data) == BLOCK_SIZE:
-                    block_num += 1
-                    
-                    if recording:
+                # 3. SCRITTURA
+                with file_lock:
+                    if recording and file_handle:
                         block_count += 1
-                        timestamp = datetime.now().timestamp()
+                        ts = datetime.now().timestamp()
                         
-                        # Parse and write all 50 samples
-                        for sample_idx in range(SAMPLES_PER_BLOCK):
-                            offset = sample_idx * BYTES_PER_SAMPLE
+                        csv_lines = []
+                        for i in range(SAMPLES_PER_BLOCK):
+                            offset = i * BYTES_PER_SAMPLE
                             sample_bytes = block_data[offset:offset + BYTES_PER_SAMPLE]
-                            sample = unpack_sensor_data(sample_bytes)
                             
-                            file_handle.write(
-                                f"{timestamp},"
-                                f"{sample['AccelX']:.6f},"
-                                f"{sample['AccelY']:.6f},"
-                                f"{sample['AccelZ']:.6f},"
-                                f"{sample['DoorHall']},"
-                                f"{sample['FloorHall']}\n"
-                            )
+                            # Unpack veloce
+                            data = unpack_sensor_data(sample_bytes)
+                            csv_lines.append(f"{ts},{data[0]:.6f},{data[1]:.6f},{data[2]:.6f},{data[3]},{data[4]}")
                         
-                        file_handle.flush()
-                        
-                        if block_num % 10 == 0:  # Print every 10 blocks
-                            print(f"[Recording] Block {block_num}: {block_count} blocks saved", end='\r')
-                    
-        # Cleanup
-        if recording and file_handle:
-            file_handle.close()
-            
-    except serial.SerialException as e:
-        print(f"[ERROR] Serial connection failed: {e}")
-        sys.exit(1)
-    except KeyboardInterrupt:
-        print("\n[INFO] Interrupted by user")
+                        file_handle.write("\n".join(csv_lines) + "\n")
+                        # file_handle.flush() # Opzionale, rallenta un po' ma è più sicuro
+
+                sliding_window = b"" # Reset per il prossimo blocco
+
+    except Exception as e:
+        print(f"[ERROR] {e}")
     finally:
-        if 'ser' in locals() and ser.is_open:
-            ser.close()
-            print("[INFO] Serial port closed")
+        stop_event.set()
+        if 'ser' in locals(): ser.close()
 
 if __name__ == '__main__':
     main()

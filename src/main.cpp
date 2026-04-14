@@ -94,7 +94,7 @@ const int HALL_FLOOR_PIN = 2;
   float CALIB_X = 0.0, CALIB_Y = 0.0, CALIB_Z = 9.8;
 #endif
 #ifdef HAS_MPU6050
-  float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 9.8; 
+  float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 0; 
 #endif
 // Block header for synchronization - defined in shared.h
 
@@ -251,7 +251,7 @@ void setup() {
 
   // Create Tasks
   xTaskCreatePinnedToCore(SensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
-  //xTaskCreatePinnedToCore(FilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
+  xTaskCreatePinnedToCore(FilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
   xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
   xTaskCreate(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }

@@ -13,7 +13,7 @@ void vCommTask(void *pvParameters) {
   for (;;) {
     // Block until we have a full block of 50 samples
     size_t receivedBytes = xStreamBufferReceive(
-      sensorStreamBuffer, 
+      filteredSensorStreamBuffer, 
       blockBuffer, 
       totalBytes, 
       portMAX_DELAY  // Wait indefinitely for full block
@@ -43,11 +43,16 @@ void vCommTask(void *pvParameters) {
         debugPrint("[CommTask] Block #%lu | Z: avg=%.3f min=%.3f max=%.3f g\n", 
                    millis(), avgZ, minZ, maxZ);
       } else {
-        // Send block through serial with frame synchronization preamble (0xAA)
-        Serial.write(0xAA); // Preamble byte
+        // Send block through serial with frame synchronization preamble (0xAA 0xBB 0xCC 0xDD)
+        // Format: [HEADER:4 bytes] + [BLOCK:1000 bytes] = 1004 bytes total
+        uint8_t header[] = {0xAA, 0xBB, 0xCC, 0xDD};
+        Serial.write(header, sizeof(header));
         Serial.write(blockBuffer, totalBytes);
         blocksSent++;
-      }
+        debugPrint("[CommTask] Sent block #%lu with preamble AABBCCDD\n", blocksSent);
+      };
+    } else {
+      debugPrint("[CommTask] Received incomplete block: %d bytes\n", receivedBytes);
     }
   }
 }
