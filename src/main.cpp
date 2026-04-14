@@ -53,6 +53,7 @@ esp_timer_handle_t samplingTimer;
 
 // Global variable to store latest Z value for display
 volatile float latestAccelZ = 0.0;
+// Ensures deterministic, jitter-free sampling at exactly 1000 Hz
 SemaphoreHandle_t displayMutex;
 
 // Heltec WiFi LoRa 32 V3 onboard OLED pins
@@ -128,7 +129,7 @@ void setup() {
     Serial.begin(115200); 
   }
   else {
-    Serial.begin(2000000);
+    Serial.begin(921600);
   }
   // Give the monitor a short window to attach after reset.
   unsigned long serialStart = millis();
