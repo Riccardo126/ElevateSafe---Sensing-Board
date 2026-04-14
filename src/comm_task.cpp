@@ -4,26 +4,22 @@
 
 // --- TASK 2: Communication - sends data blocks ---
 void vCommTask(void *pvParameters) {
-  size_t totalBytes = SAMPLES_PER_BLOCK * sizeof(SensorData);
+  auto totalBytes = SAMPLES_PER_BLOCK * sizeof(SensorData); 
   uint8_t blockBuffer[totalBytes];
-  BlockHeader header;
-  header.magicByte = 0xAA;  // Fixed sync marker
   
-  // Send a sync marker every 100ms to help with synchronization
-  uint32_t lastSyncMarker = millis();
+  uint32_t blocksSent = 0;
+  debugPrintln("[CommTask] Started");  // <-- ADD THIS
   
-  for (;;) {    
-    // Block until we have a full block of 50 samples.
+  for (;;) {
+    // Block until we have a full block of 50 samples
     size_t receivedBytes = xStreamBufferReceive(
-      filteredSensorStreamBuffer,
-      blockBuffer,
-      totalBytes,
-      portMAX_DELAY
+      sensorStreamBuffer, 
+      blockBuffer, 
+      totalBytes, 
+      portMAX_DELAY  // Wait indefinitely for full block
     );
-
-    if (receivedBytes != totalBytes) {
-      debugPrint("[CommTask] Unexpected stream receive size: %u\n", (unsigned)receivedBytes);
-    }
+    
+    debugPrint("[CommTask] Got %d bytes\n", receivedBytes);  // <-- ADD THIS
     
     if (receivedBytes == totalBytes) {
       if (DEBUG_MODE) {
@@ -47,10 +43,10 @@ void vCommTask(void *pvParameters) {
         debugPrint("[CommTask] Block #%lu | Z: avg=%.3f min=%.3f max=%.3f g\n", 
                    millis(), avgZ, minZ, maxZ);
       } else {
-        // Send block header + data in communication mode
-        header.blockSeq = blockSequence++;
-        Serial.write((uint8_t*)&header, sizeof(BlockHeader));
+        // Send block through serial with frame synchronization preamble (0xAA)
+        Serial.write(0xAA); // Preamble byte
         Serial.write(blockBuffer, totalBytes);
+        blocksSent++;
       }
     }
   }

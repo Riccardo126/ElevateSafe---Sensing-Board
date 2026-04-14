@@ -13,7 +13,7 @@
 
 // ========== DEBUG MODE CONFIGURATION ==========
 // Set to true for debug messages, false for actual serial communication
-bool DEBUG_MODE = true;
+bool DEBUG_MODE = false;
 
 // Helper functions for debug/communication output
 void debugPrint(const char* format, ...) {
@@ -90,8 +90,12 @@ const int HALL_DOOR_PIN = 1;
 const int HALL_FLOOR_PIN = 2;
 
 // Calibration offsets for IMU (auto-calibrated on startup)
-float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 9.8;
-
+#ifdef HAS_LSM6DS3
+  float CALIB_X = 0.0, CALIB_Y = 0.0, CALIB_Z = 9.8;
+#endif
+#ifdef HAS_MPU6050
+  float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 9.8; 
+#endif
 // Block header for synchronization - defined in shared.h
 
 // Counter for block sequence
@@ -247,7 +251,7 @@ void setup() {
 
   // Create Tasks
   xTaskCreatePinnedToCore(SensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
-  xTaskCreatePinnedToCore(FilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
+  //xTaskCreatePinnedToCore(FilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
   xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
   xTaskCreate(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }

@@ -106,11 +106,10 @@ void FilterTask(void *pvParameters) {
                        windowAvgX, windowAvgY, windowAvgZ,
                        emaX, emaY, emaZ);
             // qui segnali l'anomalia — semaforo, queue, flag globale
+            
         } else {
             // valore normale — puoi mandarlo al comm task
-            debugPrint("[FILTER] OK avg=%.3f %.3f %.3f ema=%.3f %.3f %.3f\n",
-                       windowAvgX, windowAvgY, windowAvgZ,
-                       emaX, emaY, emaZ);
+            //debugPrint("[FILTER] OK avg=%.3f %.3f %.3f ema=%.3f %.3f %.3f\n", windowAvgX, windowAvgY, windowAvgZ, emaX, emaY, emaZ);
             // ricrea una struct SensorData con i valori filtrati (es. media della finestra) e inviala al comm task
             SensorData filteredData;
             //filteredData.timestamp = block.timestamp;  // copia il timestamp
