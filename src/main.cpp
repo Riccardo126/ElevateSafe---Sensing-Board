@@ -251,7 +251,9 @@ void setup() {
 
   // Create Tasks
   xTaskCreatePinnedToCore(SensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
+  #if !defined(FILTER_TYPE) || (FILTER_TYPE != 0)
   xTaskCreatePinnedToCore(FilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
+  #endif
   xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
   xTaskCreate(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }

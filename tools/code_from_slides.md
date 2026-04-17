@@ -30,7 +30,7 @@ xQueueReceive(q, &v, portMAX_DELAY);
 
 // Blocking Send (back-pressure) Producer blocks when queueis full -- natural throttle
 xQueueSend(q, &sample, portMAX_DELAY);
-/* resumes once the frees a slot 
+/* resumes once the frees a slot */
 
 
 
@@ -124,66 +124,67 @@ void AverageTask(void *pvParameters) {
 #define WINDOW_SIZE 5 // Moving average window size
 #define ANOMALY_THRESHOLD 15 // Threshold for detecting anomalies (adjustable)
 void SMA(void *pvParameters) {
-float values[WINDOW_SIZE] = {0}; // Circular buffer for the moving window
-float sum = 0;
-int count = 0;
-int index = 0;
-while (1) {
-float newValue;
-// Wait for a new value from the queue
-if (xQueueReceive(xQueue, &newValue, portMAX_DELAY)) {
-sum -= values[index]; // Remove the oldest value from the sum
-values[index] = newValue; // Add the new value
-sum += newValue;
-index = (index + 1) % WINDOW_SIZE; // Update the circular index
-if (count < WINDOW_SIZE) count++;
-float movingAvg = sum / count; // Compute the moving average
-if (abs(newValue - movingAvg) > ANOMALY_THRESHOLD) {
-Serial.print("Anomaly Detected! Value: ");
-Serial.print(newValue);
-Serial.print(" cm | Moving Average: ");
-Serial.print(movingAvg);
-Serial.println(" cm");
-} else {
-Serial.print("Normal Value: ");
-Serial.print(newValue);
-Serial.println(" cm");
+    float values[WINDOW_SIZE] = {0}; // Circular buffer for the moving window
+    float sum = 0;
+    int count = 0;
+    int index = 0;
+    while (1) {
+        float newValue;
+        // Wait for a new value from the queue
+        if (xQueueReceive(xQueue, &newValue, portMAX_DELAY)) {
+            sum -= values[index]; // Remove the oldest value from the sum
+            values[index] = newValue; // Add the new value
+            sum += newValue;
+            index = (index + 1) % WINDOW_SIZE; // Update the circular index
+            if (count < WINDOW_SIZE) count++;
+            float movingAvg = sum / count; // Compute the moving average
+            if (abs(newValue - movingAvg) > ANOMALY_THRESHOLD) {
+                Serial.print("Anomaly Detected! Value: ");
+                Serial.print(newValue);
+                Serial.print(" cm | Moving Average: ");
+                Serial.print(movingAvg);
+                Serial.println(" cm");
+            } else {
+                Serial.print("Normal Value: ");
+                Serial.print(newValue);
+                Serial.println(" cm");
+            }
+        }
+    }
 }
-}
-
 
 //MOVING AVERAGE TUMBLING WINDOW
 #define WINDOW_SIZE 5 // Moving average window size
 #define ANOMALY_THRESHOLD 15 // Threshold for detecting anomalies (adjustable)
 void SMA(void *pvParameters) {
-float values[WINDOW_SIZE];
-float sum;
-int count;
-while (1) {
-sum = 0;
-count = 0;
-for (int i = 0; i < WINDOW_SIZE; i++) { // Retrieve 5 new values (tumbling window)
-if (xQueueReceive(xQueue, &values[i], portMAX_DELAY)) {
-sum += values[i];
-count++;
-}
-}
-float tumblingAvg = sum / count;
-for (int i = 0; i < WINDOW_SIZE; i++) { // Check each value for anomalies based on the batch average
-if (abs(values[i] - tumblingAvg) > ANOMALY_THRESHOLD) {
-Serial.print("Anomaly Detected! Value: ");
-Serial.print(values[i]);
-Serial.print(" cm | Batch Average: ");
-Serial.print(tumblingAvg);
-Serial.println(" cm");
-} else {
-Serial.print("Normal Value: ");
-Serial.print(values[i]);
-Serial.println(" cm");
-}
-}
-Serial.println("----- End of Tumbling Window -----");
-}
+    float values[WINDOW_SIZE];
+    float sum;
+    int count;
+    while (1) {
+        sum = 0;
+        count = 0;
+        for (int i = 0; i < WINDOW_SIZE; i++) { // Retrieve 5 new values (tumbling window)
+            if (xQueueReceive(xQueue, &values[i], portMAX_DELAY)) {
+                sum += values[i];
+                count++;
+            }
+        }
+        float tumblingAvg = sum / count;
+        for (int i = 0; i < WINDOW_SIZE; i++) { // Check each value for anomalies based on the batch average
+            if (abs(values[i] - tumblingAvg) > ANOMALY_THRESHOLD) {
+                Serial.print("Anomaly Detected! Value: ");
+                Serial.print(values[i]);
+                Serial.print(" cm | Batch Average: ");
+                Serial.print(tumblingAvg);
+                Serial.println(" cm");
+            } else {
+                Serial.print("Normal Value: ");
+                Serial.print(values[i]);
+                Serial.println(" cm");
+            }
+        }
+        Serial.println("----- End of Tumbling Window -----");
+    }
 }
 
 
@@ -191,34 +192,87 @@ Serial.println("----- End of Tumbling Window -----");
 #define WINDOW_SIZE 5 // Moving average window size
 #define ANOMALY_THRESHOLD 15 // Threshold for detecting anomalies (adjustable)
 void SMA(void *pvParameters) {
-float values[WINDOW_SIZE] = {0};
-float movingBaseline = BASELINE_DISTANCE; // Adaptive baseline
-int count = 0;
-while (1) {
-if (uxQueueMessagesWaiting(xQueue) >= WINDOW_SIZE) {
-float sum = 0, latestValue = 0;
-for (int i = 0; i < WINDOW_SIZE; i++) { // Read the last 5 values and compute moving average
-xQueueReceive(xQueue, &values[i], 0);
-sum += values[i];
-if (i == WINDOW_SIZE - 1) {
-latestValue = values[i]; // Get the most recent value
-}
+    float values[WINDOW_SIZE] = {0};
+    float movingBaseline = BASELINE_DISTANCE; // Adaptive baseline
+    int count = 0;
+    while (1) {
+        if (uxQueueMessagesWaiting(xQueue) >= WINDOW_SIZE) {
+            float sum = 0, latestValue = 0;
+            for (int i = 0; i < WINDOW_SIZE; i++) { // Read the last 5 values and compute moving average
+                xQueueReceive(xQueue, &values[i], 0);
+                sum += values[i];
+                if (i == WINDOW_SIZE - 1) {
+                    latestValue = values[i]; // Get the most recent value
+                }
+            }
+
+            float movingAvg = sum / WINDOW_SIZE;
+            movingBaseline = (movingBaseline * 0.9) + (movingAvg * 0.1); // Exponential Smoothing
+            // Detect anomalies (sharp deviations from moving baseline)
+            if (abs(latestValue - movingBaseline) > ANOMALY_THRESHOLD) {
+                Serial.print("Anomaly Detected! Value: ");
+                Serial.print(latestValue);
+                Serial.print(" cm | Expected ~");
+                Serial.print(movingBaseline);
+                Serial.println(" cm");
+            } else {
+                Serial.print("Normal Value: ");
+                Serial.print(latestValue);
+                Serial.println(" cm");
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Adjust processing rate
+
+
+
+#define HAMP_THRESHOLD 3.0 // Threshold for MAD-based anomaly detection
+float median(float arr[], int size) {
+    float temp[size];
+    memcpy(temp, arr, size * sizeof(float));
+    for (int i = 0; i < size - 1; i++) {
+        for (int j = i + 1; j < size; j++) {
+            if (temp[i] > temp[j]) {
+                float swap = temp[i];
+                temp[i] = temp[j];
+                temp[j] = swap;
+            }
+        }
+    }
+    return (size % 2 == 0) ? (temp[size/2 - 1] + temp[size/2]) / 2.0 : temp[size/2];
 }
 
-float movingAvg = sum / WINDOW_SIZE;
-movingBaseline = (movingBaseline * 0.9) + (movingAvg * 0.1); // Exponential Smoothing
-// Detect anomalies (sharp deviations from moving baseline)
-if (abs(latestValue - movingBaseline) > ANOMALY_THRESHOLD) {
-Serial.print("Anomaly Detected! Value: ");
-Serial.print(latestValue);
-Serial.print(" cm | Expected ~");
-Serial.print(movingBaseline);
-Serial.println(" cm");
-} else {
-Serial.print("Normal Value: ");
-Serial.print(latestValue);
-Serial.println(" cm");
+void HampelFilterTask(void *pvParameters) {
+    float values[WINDOW_SIZE] = {0}; // Circular buffer for the moving window
+    int count = 0;
+    int index = 0;
+    while (1) {
+        float newValue;
+        if (xQueueReceive(xQueue, &newValue, portMAX_DELAY)) { // Wait for a new value from the queue
+            values[index] = newValue; // Store new value in the circular buffer
+            index = (index + 1) % WINDOW_SIZE;
+            if (count < WINDOW_SIZE) count++;
+            if (count < WINDOW_SIZE) continue; // Ensure full window before processing
+            float medianVal = median(values, WINDOW_SIZE); // Compute median of the window
+            float deviations[WINDOW_SIZE]; // Compute Median Absolute Deviation (MAD)
+            for (int i = 0; i < WINDOW_SIZE; i++) {
+                deviations[i] = fabs(values[i] - medianVal);
+            }
+            float mad = median(deviations, WINDOW_SIZE);
+            float threshold = HAMP_THRESHOLD * mad; // Hampel Filter: Flag anomalies
+            if (fabs(newValue - medianVal) > threshold) {
+                Serial.print("Hampel Filter: Anomaly Detected! Value: ");
+                Serial.print(newValue);
+                Serial.print(" cm | Median: ");
+                Serial.print(medianVal);
+                Serial.print(" | MAD: ");
+                Serial.print(mad);
+                Serial.println(" cm");
+            } else {
+                Serial.print("Normal Value: ");
+                Serial.print(newValue);
+                Serial.println(" cm");
+            }
+        }
+    }
 }
-}
-vTaskDelay(pdMS_TO_TICKS(1000)); // Adjust processing rate
 ```

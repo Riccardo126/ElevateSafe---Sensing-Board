@@ -3,14 +3,23 @@
 #include "config.h"
 
 // --- TASK 1.5 : Data Filtering
-#define WINDOW_SIZE SAMPLES_PER_BLOCK / 3  // Moving average window size 
-#define SLIDING_STEP WINDOW_SIZE / 3 // Number of samples to slide the window each time
-#define ALPHA 0.1f  // peso exponential moving average (0=lento, 1=veloce)
-#define ANOMALY_THRESHOLD_X 14 // soglia di deviazione per segnalare anomalie (in g?) 
-#define ANOMALY_THRESHOLD_Y 14 // soglia di deviazione per segnalare anomalie (in g?) 
-#define ANOMALY_THRESHOLD_Z 20 // soglia di deviazione per segnalare anomalie (in g?) 
+#define WINDOW_SIZE SAMPLES_PER_BLOCK / 4  // Moving average window size 
+#define SLIDING_STEP WINDOW_SIZE / 4 // Number of samples to slide the window each time
+#define ALPHA 0.35f  // peso exponential moving average (0=lento, 1=veloce)
+#define ANOMALY_THRESHOLD_X 1 // soglia anomalie (solo rumore) 
+#define ANOMALY_THRESHOLD_Y 1 // soglia anomalie (solo rumore) 
+#define ANOMALY_THRESHOLD_Z 3 // soglia anomalie (in m/s^2, es. di scossa improvvisa) 
+#define HAMP_THRESHOLD 2.0 // Threshold for MAD-based anomaly detection
 
+/*tipo di filtraggio: 
+    0 = nessun filtro (raw), 
+    1 = hampel, 
+    2 = filtri tutto EMA, 
+    3 = solo anomalie EMA
+    */
 void FilterTask(void *pvParameters) {
+     
+    int filtertype = (int)pvParameters;
     // buffer circolare
     float windowX[WINDOW_SIZE] = {0};
     float windowY[WINDOW_SIZE] = {0};
@@ -20,14 +29,11 @@ void FilterTask(void *pvParameters) {
     int head = 0;          // indice del prossimo elemento da sovrascrivere
     int filled = 0;        // quanti elementi validi ci sono (fino a WINDOW_SIZE)
     
-    float windowSumX = 0;   // somma corrente della finestra
-    float windowSumY = 0;   // somma corrente della finestra
-    float windowSumZ = 0;   // somma corrente della finestra
-    
+    float windowSumX = 0, windowSumY = 0, windowSumZ = 0;   // somma corrente della finestra
+
     // exponential moving average — tiene memoria oltre la finestra
-    float emaX = 0;
-    float emaY = 0;
-    float emaZ = 0;
+    float emaXfast = 0, emaYfast = 0, emaZfast = 0;
+    float emaXslow = 0, emaYslow = 0, emaZslow = 0;
     bool ema_initialized = false;
 
     // contatore per il passo sliding
@@ -35,13 +41,13 @@ void FilterTask(void *pvParameters) {
 
     SensorData block;  // ricevi la struct intera
 
-    while (1) {
+    for (;;) {
         // ricevi un singolo SensorData dallo stream buffer
         size_t received = xStreamBufferReceive(
             sensorStreamBuffer,
             &block,
             sizeof(SensorData),
-            portMAX_DELAY
+            10 / portTICK_PERIOD_MS  // aspetta 10ms
         );
 
         if (received != sizeof(SensorData)) continue;
@@ -49,6 +55,7 @@ void FilterTask(void *pvParameters) {
         float newValueX = block.accelXYZ[0];  // asse X
         float newValueY = block.accelXYZ[1];  // asse Y
         float newValueZ = block.accelXYZ[2];  // asse Z
+        float oldValueZ;
 
         // --- aggiorna la finestra circolare ---
         // rimuovi il valore che stai sovrascrivendo dalla somma
@@ -68,21 +75,29 @@ void FilterTask(void *pvParameters) {
         // avanza la testa
         head = (head + 1) % WINDOW_SIZE;
         if (filled < WINDOW_SIZE) filled++;
-
+        
         // --- exponential moving average ---
         if (!ema_initialized && filled == WINDOW_SIZE) {
-            // inizializza EMA sulla prima finestra completa
+            // inizializza EMA fast e slow uguali sulla prima finestra completa
             // così parte già da un valore stabile e coerente con la window
-            emaX = windowSumX / WINDOW_SIZE;
-            emaY = windowSumY / WINDOW_SIZE;
-            emaZ = windowSumZ / WINDOW_SIZE;
+            emaXfast = emaXslow = windowSumX / WINDOW_SIZE;
+            emaYfast = emaYslow = windowSumY / WINDOW_SIZE;
+            emaZfast = emaZslow = windowSumZ / WINDOW_SIZE;
+            oldValueZ = emaZfast; // inizializza oldValueZ per il confronto di anomalie
             ema_initialized = true;
         } else if (ema_initialized) {
-            emaX = ALPHA * newValueX + (1.0f - ALPHA) * emaX;
-            emaY = ALPHA * newValueY + (1.0f - ALPHA) * emaY;
-            emaZ = ALPHA * newValueZ + (1.0f - ALPHA) * emaZ;
+            emaXfast = ALPHA * newValueX + (1.0f - ALPHA) * emaXfast;
+            emaYfast = ALPHA * newValueY + (1.0f - ALPHA) * emaYfast;
+            emaZfast = ALPHA * newValueZ + (1.0f - ALPHA) * emaZfast;
+
+            emaXslow = (0.08f) * newValueX + (1.0f - 0.08f) * emaXslow; // EMA più lenta
+            emaYslow = (0.08f) * newValueY + (1.0f - 0.08f) * emaYslow; // EMA più lenta
+            emaZslow = (0.08f) * newValueZ + (1.0f - 0.08f) * emaZslow; // EMA più lenta
         }
 
+        float jerkZ = fabsf(oldValueZ - newValueZ); // calcola il "jerk" sull'asse Z come differenza assoluta tra il nuovo valore e il vecchio
+        oldValueZ = newValueZ; // aggiorna oldValueZ per il prossimo confronto
+        
         // --- sliding step: processa solo ogni SLIDING_STEP elementi ---
         stepCount++;
         if (stepCount < SLIDING_STEP) continue;  // aspetta il prossimo step
@@ -95,29 +110,50 @@ void FilterTask(void *pvParameters) {
         float windowAvgY = (filled > 0) ? windowSumY / filled : 0;
         float windowAvgZ = (filled > 0) ? windowSumZ / filled : 0;
 
-        // anomaly: confronta EMA (trend lento) con media della finestra (trend recente)
-        float deviationX = fabsf(windowAvgX - emaX);
-        float deviationY = fabsf(windowAvgY - emaY);
-        float deviationZ = fabsf(windowAvgZ - emaZ);
+        // anomaly: confronta EMAfast con EMAslow o con la media della finestra, se la deviazione è troppo grande segnala un'anomalia
+        float deviationX = fabsf(emaXslow - emaXfast);
+        float deviationY = fabsf(emaYslow - emaYfast);
+        float deviationZ = fabsf(emaZslow - emaZfast);
 
-        if (deviationX > ANOMALY_THRESHOLD_X || deviationY > ANOMALY_THRESHOLD_Y || deviationZ > ANOMALY_THRESHOLD_Z) {
-            debugPrint("[ANOMALY] dev=%.3f %.3f %.3f avg=%.3f %.3f %.3f ema=%.3f %.3f %.3f\n",
-                       deviationX, deviationY, deviationZ,
-                       windowAvgX, windowAvgY, windowAvgZ,
-                       emaX, emaY, emaZ);
-            // qui segnali l'anomalia — semaforo, queue, flag globale
-            
-        } else {
-            // valore normale — puoi mandarlo al comm task
-            //debugPrint("[FILTER] OK avg=%.3f %.3f %.3f ema=%.3f %.3f %.3f\n", windowAvgX, windowAvgY, windowAvgZ, emaX, emaY, emaZ);
-            // ricrea una struct SensorData con i valori filtrati (es. media della finestra) e inviala al comm task
+        
+        if (deviationX > ANOMALY_THRESHOLD_X) {
+            debugPrint("[ANOMALY on X] dev=%.3f avg=%.3f ema=%.3f\n",
+                       deviationX, windowAvgX, emaXfast);
+            // sostituisci con qualcosa, ma cosa? 
+        }
+        if (deviationY > ANOMALY_THRESHOLD_Y) {
+            debugPrint("[ANOMALY on Y] dev=%.3f avg=%.3f ema=%.3f\n",
+                       deviationY, windowAvgY, emaYfast);
+            // sostituisci con qualcosa, ma cosa?
+        }
+        if (deviationZ > ANOMALY_THRESHOLD_Z || jerkZ > 3) { // considera anche un'anomalia se c'è un jerk improvviso superiore a 3g
+            debugPrint("[ANOMALY on Z] dev=%.3f avg=%.3f ema=%.3f\n",
+                       deviationZ, windowAvgZ, emaZfast);
+            // sostituisci con qualcosa, ma cosa?
+        }
+        if (true) { // per adesso mandiamo sempre
             SensorData filteredData;
-            //filteredData.timestamp = block.timestamp;  // copia il timestamp
-            filteredData.accelXYZ[0] = windowAvgX;
-            filteredData.accelXYZ[1] = windowAvgY;
-            filteredData.accelXYZ[2] = windowAvgZ;
+            filteredData.accelXYZ[0] = emaXfast;
+            filteredData.accelXYZ[1] = emaYfast;
+            filteredData.accelXYZ[2] = emaZfast;
+
             // invia i dati filtrati al task di comunicazione
             xStreamBufferSend(filteredSensorStreamBuffer, &filteredData, sizeof(SensorData), 0);
         }
     }
+}
+
+float median(float arr[], int size) {
+    float temp[size];
+    memcpy(temp, arr, size * sizeof(float));
+    for (int i = 0; i < size - 1; i++) {
+        for (int j = i + 1; j < size; j++) {
+            if (temp[i] > temp[j]) {
+                float swap = temp[i];
+                temp[i] = temp[j];
+                temp[j] = swap;
+            }
+        }
+    }
+    return (size % 2 == 0) ? (temp[size/2 - 1] + temp[size/2]) / 2.0 : temp[size/2];
 }

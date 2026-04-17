@@ -32,7 +32,15 @@ void SensorTask(void *pvParameters) {
       }
 
       // Write to StreamBuffer with a small timeout so we can detect failures.
-      size_t bytesSent = xStreamBufferSend(sensorStreamBuffer, &currentData, sizeof(SensorData), pdMS_TO_TICKS(10));
+      size_t bytesSent = 0;
+      #if defined(FILTER_TYPE) && (FILTER_TYPE == 0)
+      // If no filtering, send raw data directly from SensorTask
+      bytesSent = xStreamBufferSend(sensorStreamBuffer, &currentData, sizeof(SensorData), pdMS_TO_TICKS(10));
+      #endif
+      #if !defined(FILTER_TYPE) || (FILTER_TYPE != 0)
+      // If filtering is enabled, send raw data to FilterTask for processing  
+      bytesSent = xStreamBufferSend(filteredSensorStreamBuffer, &currentData, sizeof(SensorData), pdMS_TO_TICKS(10));
+      #endif
       if (bytesSent != sizeof(SensorData)) {
         debugPrint("[SensorTask] StreamBuffer send failed (%u/%u)\n", (unsigned)bytesSent, (unsigned)sizeof(SensorData));
       }
