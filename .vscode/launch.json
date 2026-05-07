@@ -12,31 +12,31 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug",
-            "executable": "C:/Users/pelle/Documents/PycharmProjects/ElevateSafe---Sensing-Board/.pio/build/nodemcu-32s/firmware.elf",
-            "projectEnvName": "nodemcu-32s",
-            "toolchainBinDir": "C:/Users/pelle/.platformio/packages/toolchain-xtensa-esp32/bin",
+            "executable": "C:/Users/pelle/Documents/PycharmProjects/ElevateSafe---Sensing-Board/.pio/build/production_heltec/firmware.elf",
+            "projectEnvName": "production_heltec",
+            "toolchainBinDir": "C:/Users/pelle/.platformio/packages/toolchain-xtensa-esp32s3/bin",
             "internalConsoleOptions": "openOnSessionStart",
             "preLaunchTask": {
                 "type": "PlatformIO",
-                "task": "Pre-Debug (nodemcu-32s)"
+                "task": "Pre-Debug (production_heltec)"
             }
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (skip Pre-Debug)",
-            "executable": "C:/Users/pelle/Documents/PycharmProjects/ElevateSafe---Sensing-Board/.pio/build/nodemcu-32s/firmware.elf",
-            "projectEnvName": "nodemcu-32s",
-            "toolchainBinDir": "C:/Users/pelle/.platformio/packages/toolchain-xtensa-esp32/bin",
+            "executable": "C:/Users/pelle/Documents/PycharmProjects/ElevateSafe---Sensing-Board/.pio/build/production_heltec/firmware.elf",
+            "projectEnvName": "production_heltec",
+            "toolchainBinDir": "C:/Users/pelle/.platformio/packages/toolchain-xtensa-esp32s3/bin",
             "internalConsoleOptions": "openOnSessionStart"
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (without uploading)",
-            "executable": "C:/Users/pelle/Documents/PycharmProjects/ElevateSafe---Sensing-Board/.pio/build/nodemcu-32s/firmware.elf",
-            "projectEnvName": "nodemcu-32s",
-            "toolchainBinDir": "C:/Users/pelle/.platformio/packages/toolchain-xtensa-esp32/bin",
+            "executable": "C:/Users/pelle/Documents/PycharmProjects/ElevateSafe---Sensing-Board/.pio/build/production_heltec/firmware.elf",
+            "projectEnvName": "production_heltec",
+            "toolchainBinDir": "C:/Users/pelle/.platformio/packages/toolchain-xtensa-esp32s3/bin",
             "internalConsoleOptions": "openOnSessionStart",
             "loadMode": "manual"
         }
