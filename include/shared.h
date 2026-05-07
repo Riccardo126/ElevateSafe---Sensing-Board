@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include <esp_timer.h>
 #include <freertos/stream_buffer.h>
+#include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include "config.h"  // For SensorData and other configs
 
@@ -21,10 +22,12 @@ extern TaskHandle_t SensorTaskHandle;
 extern TaskHandle_t FilterTaskHandle;
 extern TaskHandle_t DisplayTaskHandle;
 extern TaskHandle_t CommTaskHandle;
+extern TaskHandle_t IntegratorTaskHandle;
 
 // StreamBuffer for efficient binary data transfer
 extern StreamBufferHandle_t sensorStreamBuffer;
 extern StreamBufferHandle_t filteredSensorStreamBuffer;
+extern QueueHandle_t velocityQueue;
 
 
 // Semaphore to trigger sampling at precise 1kHz
@@ -33,8 +36,9 @@ extern SemaphoreHandle_t samplingTrigger;
 // Timer handle
 extern esp_timer_handle_t samplingTimer;
 
-// Global variable to store latest Z value for display
+// Global variable to store value
 extern volatile float latestAccelZ;
+extern volatile float currentHeight;
 extern SemaphoreHandle_t displayMutex;
 
 // Define your new I2C pins
@@ -91,8 +95,6 @@ struct BlockHeader {
   uint8_t blockSeq;     // Sequence number (0-255, wraps around)
 };
 
-// Counter for block sequence
-extern volatile uint8_t blockSequence;
 
 // I2C scan function
 void scanI2C(TwoWire &bus, const char *busName);

@@ -1,3 +1,3 @@
 #pragma once
 
-void DisplayTask(void *pvParameters);
+void vDisplayTask(void *pvParameters);

@@ -3,7 +3,7 @@
 #include "config.h"
 
 // --- TASK 1: Sensor Reading (triggered by hardware timer) ---
-void SensorTask(void *pvParameters) {
+void vSensorTask(void *pvParameters) {
   SensorData currentData;
 
   for (;;) {
@@ -21,7 +21,7 @@ void SensorTask(void *pvParameters) {
         currentData.accelXYZ[1] = (accel.acceleration.y ) - CALIB_Y;
         currentData.accelXYZ[2] = (accel.acceleration.z ) - CALIB_Z; // / 9.81f it measures differently
       #endif
-      currentData.doorHall = 0;  // Placeholder
+      currentData.anomaly = false;
       currentData.floorHall = 0;
 
 

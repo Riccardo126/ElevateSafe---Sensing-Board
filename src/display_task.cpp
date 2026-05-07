@@ -3,7 +3,7 @@
 #include "config.h"
 
 // --- TASK 3: Display Update (2Hz) ---
-void DisplayTask(void *pvParameters) {
+void vDisplayTask(void *pvParameters) {
   TickType_t xLastWakeTime = xTaskGetTickCount();
   const TickType_t xFrequency = pdMS_TO_TICKS(500); // 2Hz to reduce flicker
 

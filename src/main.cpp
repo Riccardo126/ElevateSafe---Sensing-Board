@@ -6,6 +6,7 @@
 #include "comm_task.h"
 #include "sensor_task.h"
 #include "filter_task.h"
+#include "integrator_task.h"
 #include "shared.h"
 #include "config.h"
 
@@ -40,10 +41,12 @@ TaskHandle_t SensorTaskHandle;
 TaskHandle_t FilterTaskHandle;
 TaskHandle_t DisplayTaskHandle;
 TaskHandle_t CommTaskHandle;
+TaskHandle_t IntegratorTaskHandle;
 
 // StreamBuffer for efficient binary data transfer
-StreamBufferHandle_t sensorStreamBuffer;
-StreamBufferHandle_t filteredSensorStreamBuffer;
+StreamBufferHandle_t sensorStreamBuffer; // raw sensor data from SensorTask to FilterTask 
+StreamBufferHandle_t filteredSensorStreamBuffer; // filtered data from FilterTask to IntegratorTask
+QueueHandle_t velocityQueue; // For sending velocity estimates from IntegratorTask to CommTask
 
 // Semaphore to trigger sampling at precise 1kHz
 SemaphoreHandle_t samplingTrigger;
@@ -53,20 +56,25 @@ esp_timer_handle_t samplingTimer;
 
 // Global variable to store latest Z value for display
 volatile float latestAccelZ = 0.0;
+
+// Global max z speed for comparison
+volatile float maxZSpeed = 0.0f;
+
 // Ensures deterministic, jitter-free sampling at exactly 1000 Hz
 SemaphoreHandle_t displayMutex;
 
-// Heltec WiFi LoRa 32 V3 onboard OLED pins
-const int OLED_SDA_PIN = 17;
-const int OLED_SCL_PIN = 18;
-const int OLED_RST_PIN = 21;
-const int OLED_VEXT_PIN = 36;
+
 
 // Heltec WiFi LoRa 32 V3 onboard OLED (usually I2C address 0x3C)
 // OLED — solo su Heltec
 #ifdef HAS_OLED
   #include <Adafruit_GFX.h>
   #include <Adafruit_SSD1306.h>
+  // Heltec WiFi LoRa 32 V3 onboard OLED pins
+  const int OLED_SDA_PIN = 17;
+  const int OLED_SCL_PIN = 18;
+  const int OLED_RST_PIN = 21;
+  const int OLED_VEXT_PIN = 36;
   const int SCREEN_WIDTH = 128;
   const int SCREEN_HEIGHT = 64;
   const int OLED_RESET = -1;
@@ -75,31 +83,24 @@ const int OLED_VEXT_PIN = 36;
 
 // Sensor Instances
 // IMU — libreria diversa per board diversa
+// Calibration offsets for IMU (auto-calibrated on startup)
 #ifdef HAS_LSM6DS3
   #include <SparkFunLSM6DS3.h>
   LSM6DS3 myIMU(I2C_MODE, 0x6B);
+  float CALIB_X = 0.0, CALIB_Y = 0.0, CALIB_Z = 9.8;
 #endif
-
 #ifdef HAS_MPU6050
   #include <Adafruit_MPU6050.h>
   #include <Adafruit_Sensor.h>
   Adafruit_MPU6050 myIMU;
+  float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 0; 
 #endif
 
 const int HALL_DOOR_PIN = 1;
 const int HALL_FLOOR_PIN = 2;
 
-// Calibration offsets for IMU (auto-calibrated on startup)
-#ifdef HAS_LSM6DS3
-  float CALIB_X = 0.0, CALIB_Y = 0.0, CALIB_Z = 9.8;
-#endif
-#ifdef HAS_MPU6050
-  float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 0; 
-#endif
 // Block header for synchronization - defined in shared.h
 
-// Counter for block sequence
-volatile uint8_t blockSequence = 0;
 
 void scanI2C(TwoWire &bus, const char *busName) {
   debugPrint("I2C scan on %s...\n", busName);
@@ -218,6 +219,13 @@ void setup() {
     while(1); // halt
   } 
 
+  // Keep only the most recent velocity estimate.
+  velocityQueue = xQueueCreate(1, sizeof(float));
+  if (velocityQueue == NULL) {
+    debugPrintln("ERROR: Velocity queue creation failed!");
+    while(1); // halt
+  }
+
   // Create sampling trigger semaphore
   samplingTrigger = xSemaphoreCreateBinary();
   if (samplingTrigger == NULL) {
@@ -250,12 +258,11 @@ void setup() {
   debugPrintln("[BOOT] Creating FreeRTOS tasks...");
 
   // Create Tasks
-  xTaskCreatePinnedToCore(SensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
-  #if !defined(FILTER_TYPE) || (FILTER_TYPE != 0)
-  xTaskCreatePinnedToCore(FilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
-  #endif
+  xTaskCreatePinnedToCore(vSensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
+  xTaskCreatePinnedToCore(vFilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
+  xTaskCreatePinnedToCore(vIntegratorTask, "IntegratorTask", 4096, NULL, 2, &IntegratorTaskHandle, 0);
   xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
-  xTaskCreate(DisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
+  xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }
 
 void loop() {
