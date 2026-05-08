@@ -9,7 +9,7 @@ constexpr UBaseType_t kDemoTaskPriority = 1;
 void demoAlertTask(void *pvParameters) {
 	(void)pvParameters;
 
-	uint32_t lastDemoSendMs = 0;
+	uint32_t lastDemoSendMs = millis() - kDemoAlertPeriodMs;
 	bool sendWarning = true;
 
 	for (;;) {
@@ -22,6 +22,8 @@ void demoAlertTask(void *pvParameters) {
 
 			if (!sendAlertData(alertData)) {
 				Serial.println("[BOOT] Failed to enqueue alert");
+			} else {
+				Serial.printf("[BOOT] Enqueued alert alarm=%d\n", alertData.alarm);
 			}
 		}
 
@@ -31,6 +33,7 @@ void demoAlertTask(void *pvParameters) {
 
 void setup() {
 	Serial.begin(115200);
+	delay(1000); // Allow time for serial monitor to connect
 	while (!Serial && millis() < 2000) {
 		delay(10);
 	}
