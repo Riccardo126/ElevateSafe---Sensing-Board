@@ -64,6 +64,19 @@ void showOledStatus(const char *line1, const char *line2 = nullptr) {
     if (line2 != nullptr) {
         oled.println(line2);
     }
+    // add a simple uptime timestamp (HH:MM:SS) on the bottom line
+    {
+        uint32_t ms = millis();
+        uint32_t seconds = ms / 1000u;
+        uint32_t hh = (seconds / 3600) % 100; // cap hours to two digits
+        uint32_t mm = (seconds % 3600) / 60;
+        uint32_t ss = seconds % 60;
+        char ts[16];
+        snprintf(ts, sizeof(ts), "t=%02u:%02u:%02u", static_cast<unsigned>(hh), static_cast<unsigned>(mm), static_cast<unsigned>(ss));
+        // position cursor near bottom (use y=56 for 8px font on 64px height)
+        oled.setCursor(0, 56);
+        oled.println(ts);
+    }
     oled.display();
 }
 

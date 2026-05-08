@@ -2,7 +2,7 @@
 
 #include "comm_task.h"
 
-constexpr uint32_t kDemoAlertPeriodMs = 10000;
+constexpr uint32_t kDemoAlertPeriodMs = 20000;
 constexpr uint32_t kDemoTaskStackSize = 3072;
 constexpr UBaseType_t kDemoTaskPriority = 1;
 
