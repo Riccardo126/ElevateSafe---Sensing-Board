@@ -97,8 +97,9 @@ void loraTask(void *pvParameters) {
         const uint8_t *payload = reinterpret_cast<const uint8_t *>(&alertData);
         int16_t state = loraRadio.transmit(payload, sizeof(AlertData));
         if (state == RADIOLIB_ERR_NONE) {
-            Serial.printf("[LoRa] Sent AlertData alarm=%d size=%u bytes\n",
+            Serial.printf("[LoRa] Sent AlertData alarm=%d , elev_id=%d , size=%u bytes\n",
                           alertData.alarm,
+                          alertData.elev_id,
                           static_cast<unsigned>(sizeof(AlertData)));
             showOledStatus("Messaggio inviato", oledLine);
         } else {

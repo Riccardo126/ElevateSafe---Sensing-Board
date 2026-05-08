@@ -17,6 +17,7 @@ void demoAlertTask(void *pvParameters) {
 			lastDemoSendMs = millis();
 
 			AlertData alertData{};
+			alertData.elev_id = random(1, 11);
 			alertData.alarm = sendWarning ? 1 : 2;
 			sendWarning = !sendWarning;
 
