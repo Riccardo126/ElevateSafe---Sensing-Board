@@ -1,13 +1,7 @@
-#include <stdio.h>
+#include <Arduino.h>
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include <WiFiClientSecure.h>
-#include <PubSubClient.h>
-#include <WiFi.h>
-#include <ArduinoJson.h>
-#include "secrets.h"
+#include "freertos/queue.h"
 
 void connectAWS(void *pvParameters);
-void message_publish(void *pvParameters);
 
 extern QueueHandle_t alertQueue;

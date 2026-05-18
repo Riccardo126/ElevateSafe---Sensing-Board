@@ -25,6 +25,7 @@ void sendAlertData(void *pvParameters) {
         } else {
             Serial.printf("Dati inviati alla coda: Elevator ID=%u, Alarm=%u\n", data.elev_id, data.alarm);
         }
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
 
@@ -40,21 +41,16 @@ void setup()
         while(1); // Blocco di sicurezza
     }
 
-    xTaskCreate(    sendAlertData,
+    xTaskCreatePinnedToCore(    sendAlertData,
                     "task_send_alert",
-                    4096,
+                    2048,
                     NULL,
-                    10,
-                    NULL
+                    1,
+                    NULL,
+                    0
                 );
 
-    xTaskCreate(    connectAWS,
-                    "task_aws",
-                    4096,
-                    NULL,
-                    10,
-                    &task_aws
-                );
+    xTaskCreatePinnedToCore(connectAWS, "task_aws", 12288, NULL, 1, NULL, 1);
 }
 
 void loop()
