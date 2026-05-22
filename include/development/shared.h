@@ -81,7 +81,6 @@ extern const int OLED_VEXT_PIN;
   extern Adafruit_MPU6050 myIMU;
 #endif
 
-extern const int HALL_DOOR_PIN;
 extern const int HALL_FLOOR_PIN;
 
 // Calibration offsets for IMU (auto-calibrated on startup)

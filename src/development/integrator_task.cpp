@@ -1,6 +1,7 @@
 #include "integrator_task.h"
 #include "shared.h"
 #include "config.h"
+#include <math.h>
 
 // --- TASK 3: Analysis - integrates acceleration to velocity and distance ---
 void vIntegratorTask(void *pvParameters) {
@@ -12,8 +13,8 @@ void vIntegratorTask(void *pvParameters) {
   float cum_vZ = 0.0f;
   float delta_vZ = 0.0f;
   float positionZ = 0.0f;
-  float maxAccelZ = 0.0f;
-  uint32_t sampleCount = 0;
+  float maxAccelZ = 0.0f; // for now only local
+  uint32_t sampleCount = 0; // keep track from start
   bool hasPrevAccel = false;
 
   debugPrintln("[IntegratorTask] Started");
@@ -29,11 +30,9 @@ void vIntegratorTask(void *pvParameters) {
     if (receivedBytes != sizeof(SensorData)) continue;
 
     float accelZ = sample.accelXYZ[2];
-    if (sampleCount == 0 || accelZ > maxAccelZ) {
-      maxAccelZ = accelZ;
-    }
+    if (accelZ > maxAccelZ) maxAccelZ = accelZ;
 
-    if (!hasPrevAccel) {
+    if (!hasPrevAccel) { // First sample, just initialize
       prevAccelZ = accelZ;
       hasPrevAccel = true;
       sampleCount++;
@@ -54,11 +53,6 @@ void vIntegratorTask(void *pvParameters) {
     prevVelocityZ = cum_vZ;
     sampleCount++;
 
-    if ((sampleCount % SAMPLES_PER_BLOCK) == 0) {
-      debugPrint(
-        "[IntegratorTask] t=%lu ms | vZ=%.3f m/s | aZmax=%.3f\n",
-        millis(), cum_vZ, maxAccelZ
-      );
-    }
+    Serial.printf("%lu\t%.3f\t%.3f\t%.3f\n", millis(), accelZ, cum_vZ, positionZ);
   }
 }

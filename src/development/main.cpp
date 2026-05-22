@@ -14,7 +14,7 @@
 
 // ========== DEBUG MODE CONFIGURATION ==========
 // Set to true for debug messages, false for actual serial communication
-bool DEBUG_MODE = false;
+bool DEBUG_MODE = true;
 
 // Helper functions for debug/communication output
 void debugPrint(const char* format, ...) {
@@ -96,7 +96,6 @@ SemaphoreHandle_t displayMutex;
   float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 0; 
 #endif
 
-const int HALL_DOOR_PIN = 1;
 const int HALL_FLOOR_PIN = 2;
 
 // Block header for synchronization - defined in shared.h
