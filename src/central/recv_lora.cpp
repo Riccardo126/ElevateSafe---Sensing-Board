@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <RadioLib.h>
 #include <SPI.h>
+#include <mbedtls/aes.h>
 #include <Adafruit_SSD1306.h>
 #include "lora.h"
+#include "secrets.h"
 
 // OLED Display
 extern Adafruit_SSD1306 display;
@@ -82,7 +84,8 @@ void loraReceiveTask(void *pvParameters) {
     Serial.printf("[%lu ms] [LoRa Task] Reception task started\n", ms);
     
     AlertData alertData{};
-    uint8_t buffer[sizeof(AlertData)];
+    uint8_t rxBuffer[sizeof(AlertData)];
+    uint8_t decryptedBlock[16];
     uint32_t lastWaitingTime = 0;
     
     for (;;) {
@@ -96,11 +99,21 @@ void loraReceiveTask(void *pvParameters) {
         }
         
         // Receive packet
-        int16_t state = loraRadio.receive(buffer, sizeof(AlertData));
+        int16_t state = loraRadio.receive(rxBuffer, sizeof(AlertData));
         
         if (state == RADIOLIB_ERR_NONE) {
-            // Successfully received
-            memcpy(&alertData, buffer, sizeof(AlertData));
+            // Successfully received - decryption
+            mbedtls_aes_context aes;
+            mbedtls_aes_init(&aes);
+            mbedtls_aes_setkey_dec(&aes, LORA_AES_KEY, 128);
+
+            uint8_t iv[16];
+            memcpy(iv, rxBuffer, 16);
+
+            mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, 16, iv, &rxBuffer[16], decryptedBlock);
+            mbedtls_aes_free(&aes);
+
+            memcpy(&alertData, decryptedBlock, sizeof(AlertData));
             packetsReceived++;
             lastAlarmValue = alertData.alarm;
             lastElevId = alertData.elev_id;

@@ -1,5 +1,8 @@
 #include "comm_task.h"
 
+#include <mbedtls/aes.h>
+#include <esp_system.h>
+
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
@@ -84,6 +87,10 @@ void loraTask(void *pvParameters) {
     (void)pvParameters;
 
     AlertData alertData{};
+
+    uint8_t txBuffer[sizeof(AlertData)];
+    uint8_t plaintextBlock[16];
+
     for (;;) {
         if (xQueueReceive(alertQueue, &alertData, portMAX_DELAY) != pdTRUE) {
             continue;
@@ -94,8 +101,24 @@ void loraTask(void *pvParameters) {
         Serial.printf("[LoRa] TX start alarm=%d\n", alertData.alarm);
         showOledStatus("Invio...", oledLine);
 
-        const uint8_t *payload = reinterpret_cast<const uint8_t *>(&alertData);
-        int16_t state = loraRadio.transmit(payload, sizeof(AlertData));
+        // SYMMETRIC ENCRYPTION
+        esp_fill_random(txBuffer,16);
+
+        memset(plaintextBlock, 0, 16);
+        memcpy(plaintextBlock, &alertData, sizeof(AlertData));
+
+        mbedtls_aes_context aes;
+        mbedtls_aes_init(&aes);
+        mbedtls_aes_setkey_enc(&aes, LORA_AES_KEY, 128);
+
+        uint8_t temp_iv[16];
+        memcpy(temp_iv, txBuffer, 16);
+
+        mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, 16, temp_iv, plaintextBlock, &txBuffer[16]);
+        mbedtls_aes_free(&aes);
+        // END ENCRYPTION
+
+        int16_t state = loraRadio.transmit(txBuffer, sizeof(txBuffer));
         if (state == RADIOLIB_ERR_NONE) {
             Serial.printf("[LoRa] Sent AlertData alarm=%d , elev_id=%d , size=%u bytes\n",
                           alertData.alarm,
