@@ -6,8 +6,8 @@
 #define SECRET
 #define THINGNAME "Central_node"                         //change this
  
-const char WIFI_SSID[] PROGMEM = "TIM-18064669" ;              //change this
-const char WIFI_PASSWORD[] PROGMEM = "cb9tb65tFeARUkR69dEZx2TR";           //change this
+const char WIFI_SSID[] PROGMEM = "Iphone di @matteoshiula" ;              //change this
+const char WIFI_PASSWORD[] PROGMEM = "Password";           //change this
 const char AWS_IOT_ENDPOINT[] PROGMEM = "a290zt0vuad6qr-ats.iot.eu-south-1.amazonaws.com";       //change this
  
 // Lora communication key
