@@ -46,6 +46,7 @@ TaskHandle_t IntegratorTaskHandle;
 // StreamBuffer for efficient binary data transfer
 StreamBufferHandle_t sensorStreamBuffer; // raw sensor data from SensorTask to FilterTask 
 StreamBufferHandle_t filteredSensorStreamBuffer; // filtered data from FilterTask to IntegratorTask
+StreamBufferHandle_t commSensorStreamBuffer; // raw sensor data from SensorTask to CommTask
 QueueHandle_t velocityQueue; // For sending velocity estimates from IntegratorTask to CommTask
 
 // Semaphore to trigger sampling at precise 1kHz
@@ -93,7 +94,7 @@ SemaphoreHandle_t displayMutex;
   #include <Adafruit_MPU6050.h>
   #include <Adafruit_Sensor.h>
   Adafruit_MPU6050 myIMU;
-  float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 0; 
+  float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 9.27; 
 #endif
 
 const int HALL_FLOOR_PIN = 2;
@@ -167,25 +168,29 @@ void setup() {
       debugPrintln("OLED init OK");
     }
   #endif
-  // 1. Initialize the second I2C bus (Wire) with your custom pins
 
-  Wire.begin(IMU_SDA_PIN, IMU_SCL_PIN);  // Initialize directly with IMU pins
+  // 1. Initialize the second I2C bus (Wire) with your custom pins
   pinMode(IMU_SDA_PIN, INPUT_PULLUP);  // Enable internal pullup
   pinMode(IMU_SCL_PIN, INPUT_PULLUP);  // Enable internal pullup
+  bool wireInit = Wire.begin(IMU_SDA_PIN, IMU_SCL_PIN);  // Initialize directly with IMU pins
+  if (!wireInit) {
+    debugPrintln("ERROR: Wire.begin() failed! Check SDA/SCL pin definitions and connections.");
+    while(1); // halt
+  }
+
   Wire.setClock(100000);  // Set to 100kHz
   delay(100);  // Wait for sensor to power up
   scanI2C(Wire, "Wire(IMU)");
-   
+
 
   #ifdef HAS_LSM6DS3
     debugPrintln("Initializing LSM6DS3...");
-    int imuStatus = myIMU.begin();
+    bool imuStatus = !static_cast<bool>(myIMU.begin());
   #endif
   #ifdef HAS_MPU6050
     debugPrintln("Initializing MPU6050...");
-    bool imuInit = myIMU.begin();
-    int imuStatus = imuInit ? 0 : 1;
-    if (imuInit) myIMU.setAccelerometerRange(MPU6050_RANGE_2_G);
+    bool imuStatus = myIMU.begin(0x68, &Wire); // Explicitly set I2C address and sensor ID
+    if (imuStatus) myIMU.setAccelerometerRange(MPU6050_RANGE_2_G);
   #endif  
 
   debugPrint("IMU begin status: %d (0=IMU_SUCCESS, 1=IMU_ERROR)\n", imuStatus);
@@ -212,8 +217,12 @@ void setup() {
     STREAM_BUFFER_SIZE,
     SAMPLES_PER_BLOCK * sizeof(SensorData)  // Trigger level: one full block
   );
+  commSensorStreamBuffer = xStreamBufferCreate(
+    STREAM_BUFFER_SIZE,
+    SAMPLES_PER_BLOCK * sizeof(SensorData)  // Trigger level: one full block
+  );
   
-  if (sensorStreamBuffer == NULL || filteredSensorStreamBuffer == NULL) {
+  if (sensorStreamBuffer == NULL || filteredSensorStreamBuffer == NULL || commSensorStreamBuffer == NULL) {
     debugPrintln("ERROR: StreamBuffer creation failed!");
     while(1); // halt
   } 
@@ -260,8 +269,8 @@ void setup() {
   xTaskCreatePinnedToCore(vSensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
   xTaskCreatePinnedToCore(vFilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
   xTaskCreatePinnedToCore(vIntegratorTask, "IntegratorTask", 4096, NULL, 2, &IntegratorTaskHandle, 0);
-  xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
-  xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
+  //xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
+  //xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }
 
 void loop() {

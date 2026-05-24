@@ -27,6 +27,7 @@ extern TaskHandle_t IntegratorTaskHandle;
 // StreamBuffer for efficient binary data transfer
 extern StreamBufferHandle_t sensorStreamBuffer;
 extern StreamBufferHandle_t filteredSensorStreamBuffer;
+extern StreamBufferHandle_t commSensorStreamBuffer;
 extern QueueHandle_t velocityQueue;
 
 
