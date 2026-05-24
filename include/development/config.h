@@ -9,6 +9,14 @@ struct SensorData {
   bool anomaly;
 };
 
+// Struct for anomaly data
+struct CommData {
+  uint32_t timestamp;
+  uint8_t anomalyType; // 0=normal data, 1=emergency malfunction, 2=warning vibration, 3=info
+  uint8_t elevatorID;
+
+};
+
 #define SAMPLE_RATE_HZ 1000 //max 1600 for LSMDS3
 #define SAMPLES_PER_BLOCK 50
 #define TIMER_PERIOD_US (1000000 / SAMPLE_RATE_HZ)  // 1000 us = 1ms

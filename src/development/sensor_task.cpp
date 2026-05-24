@@ -17,9 +17,13 @@ void vSensorTask(void *pvParameters) {
       #ifdef HAS_MPU6050
         sensors_event_t accel, gyro, temp;
         myIMU.getEvent(&accel, &gyro, &temp);
-        currentData.accelXYZ[0] = (accel.acceleration.x ) - CALIB_X;
-        currentData.accelXYZ[1] = (accel.acceleration.y ) - CALIB_Y;
-        currentData.accelXYZ[2] = (accel.acceleration.z ) - CALIB_Z; // / 9.81f it measures differently
+        // if calibrated value is lower than 0.05: set to 0
+        float calibratedX = (accel.acceleration.x ) - CALIB_X;
+        float calibratedY = (accel.acceleration.y ) - CALIB_Y;
+        float calibratedZ = (accel.acceleration.z ) - CALIB_Z; // / 9.81f it measures differently
+        currentData.accelXYZ[0] = fabsf(calibratedX) < 0.05 ? 0 : calibratedX;
+        currentData.accelXYZ[1] = fabsf(calibratedY) < 0.05 ? 0 : calibratedY;
+        currentData.accelXYZ[2] = fabsf(calibratedZ) < 0.05 ? 0 : calibratedZ; // / 9.81f it measures differently
       #endif
       currentData.anomaly = false;
       currentData.floorHall = 0;
@@ -33,10 +37,6 @@ void vSensorTask(void *pvParameters) {
 
       // Write to StreamBuffer with a small timeout so we can detect failures.
       size_t bytesSent = 0;
-      #if defined(FILTER_TYPE) && (FILTER_TYPE == 0)
-      // If no filtering, send raw data directly from SensorTask
-      bytesSent = xStreamBufferSend(sensorStreamBuffer, &currentData, sizeof(SensorData), pdMS_TO_TICKS(10));
-      #endif
       #if !defined(FILTER_TYPE) || (FILTER_TYPE != 0)
       // If filtering is enabled, send raw data to FilterTask for processing  
       bytesSent = xStreamBufferSend(filteredSensorStreamBuffer, &currentData, sizeof(SensorData), pdMS_TO_TICKS(10));

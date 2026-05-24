@@ -94,7 +94,7 @@ SemaphoreHandle_t displayMutex;
   #include <Adafruit_MPU6050.h>
   #include <Adafruit_Sensor.h>
   Adafruit_MPU6050 myIMU;
-  float CALIB_X = 0.024, CALIB_Y = 0.08, CALIB_Z = 9.27; 
+  float CALIB_X = 0.42, CALIB_Y = 0.1160, CALIB_Z = 9.2875; 
 #endif
 
 const int HALL_FLOOR_PIN = 2;
@@ -185,16 +185,16 @@ void setup() {
 
   #ifdef HAS_LSM6DS3
     debugPrintln("Initializing LSM6DS3...");
-    bool imuStatus = !static_cast<bool>(myIMU.begin());
+    bool imuStatus = static_cast<bool>(myIMU.begin());
   #endif
   #ifdef HAS_MPU6050
     debugPrintln("Initializing MPU6050...");
-    bool imuStatus = myIMU.begin(0x68, &Wire); // Explicitly set I2C address and sensor ID
-    if (imuStatus) myIMU.setAccelerometerRange(MPU6050_RANGE_2_G);
+    bool imuStatus = !myIMU.begin(0x68, &Wire); // looks like 0=success, 1=failure, opposite of usual Arduino convention
+    if (!imuStatus) myIMU.setAccelerometerRange(MPU6050_RANGE_2_G);
   #endif  
 
-  debugPrint("IMU begin status: %d (0=IMU_SUCCESS, 1=IMU_ERROR)\n", imuStatus);
-  if (imuStatus != 0) {
+  debugPrint("IMU begin status: %d \n", imuStatus);
+  if (!imuStatus) {
     debugPrintln("ERROR: IMU initialization failed!");
     while(1); // halt
   }

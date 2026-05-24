@@ -29,6 +29,8 @@ void vIntegratorTask(void *pvParameters) {
 
     if (receivedBytes != sizeof(SensorData)) continue;
 
+    float accelX = sample.accelXYZ[0];
+    float accelY = sample.accelXYZ[1];
     float accelZ = sample.accelXYZ[2];
     if (accelZ > maxAccelZ) maxAccelZ = accelZ;
 
@@ -53,6 +55,8 @@ void vIntegratorTask(void *pvParameters) {
     prevVelocityZ = cum_vZ;
     sampleCount++;
 
-    Serial.printf("%lu\t%.3f\t%.3f\t%.3f\n", millis(), accelZ, cum_vZ, positionZ);
+    if (sampleCount % 10 == 0) {
+      Serial.printf("%lu\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", millis(), accelX, accelY, accelZ, cum_vZ, positionZ);
+    }
   }
 }
