@@ -20,12 +20,12 @@ void vSensorTask(void *pvParameters) {
     if (xSemaphoreTake(samplingTrigger, portMAX_DELAY) == pdTRUE) {         
       #ifdef HAS_LSM6DS3
         // deadband = 0.005
-        float calibratedX = myIMU.readFloatAccelX() - CALIB_X;
-        float calibratedY = myIMU.readFloatAccelY() - CALIB_Y;
-        float calibratedZ = myIMU.readFloatAccelZ() - CALIB_Z;
-        currentData.accelXYZ[0] = fabsf(calibratedX) < 0.005 ? 0 : calibratedX * 9.81f; // convert to m/s^2
-        currentData.accelXYZ[1] = fabsf(calibratedY) < 0.005 ? 0 : calibratedY * 9.81f;
-        currentData.accelXYZ[2] = fabsf(calibratedZ) < 0.005 ? 0 : calibratedZ * 9.81f;
+        float calibratedX = (myIMU.readFloatAccelX() - CALIB_X) * 9.81f; // convert to m/s^2
+        float calibratedY = (myIMU.readFloatAccelY() - CALIB_Y) * 9.81f; // convert to m/s^2
+        float calibratedZ = (myIMU.readFloatAccelZ() - CALIB_Z) * 9.81f; // convert to m/s^2
+        currentData.accelXYZ[0] = fabsf(calibratedX) < 0.05 ? 0 : calibratedX;
+        currentData.accelXYZ[1] = fabsf(calibratedY) < 0.05 ? 0 : calibratedY; 
+        currentData.accelXYZ[2] = fabsf(calibratedZ) < 0.05 ? 0 : calibratedZ; 
       #endif
       #ifdef HAS_MPU6050
         sensors_event_t accel, gyro, temp;

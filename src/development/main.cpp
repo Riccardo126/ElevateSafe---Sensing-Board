@@ -196,7 +196,7 @@ void setup() {
   #ifdef HAS_LSM6DS3
     debugPrintln("Initializing LSM6DS3...");
     status_t imuS = myIMU.begin();
-    bool imuStatus = imuS == IMU_SUCCESS;
+    imuStatus = (imuS == IMU_SUCCESS);
   #endif
   #ifdef HAS_MPU6050
     debugPrintln("Initializing MPU6050...");
