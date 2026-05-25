@@ -88,7 +88,7 @@ SemaphoreHandle_t displayMutex;
 #ifdef HAS_LSM6DS3
   #include <SparkFunLSM6DS3.h>
   LSM6DS3 myIMU(I2C_MODE, 0x6B);
-  float CALIB_X = 0.0, CALIB_Y = 0.0, CALIB_Z = 0.0;
+  float CALIB_X = 0.010, CALIB_Y = -0.002, CALIB_Z = 1.013;
 #endif
 #ifdef HAS_MPU6050
   #include <Adafruit_MPU6050.h>
@@ -196,7 +196,7 @@ void setup() {
   #ifdef HAS_LSM6DS3
     debugPrintln("Initializing LSM6DS3...");
     status_t imuS = myIMU.begin();
-    imuStatus = (imuS == IMU_SUCCESS);
+    bool imuStatus = imuS == IMU_SUCCESS;
   #endif
   #ifdef HAS_MPU6050
     debugPrintln("Initializing MPU6050...");

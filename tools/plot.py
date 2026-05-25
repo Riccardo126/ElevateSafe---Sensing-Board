@@ -14,7 +14,7 @@ window = 51
 names = ["Timestamp","AccelX","AccelY","AccelZ","DoorHall","FloorHall"]
 nnames = ["Program Time [s]","a x","a y","a z","vel","pos"]
 df = pd.read_csv(choose, names=nnames, header=0)
-// calcola deri
+
 
 
 df["Timestamp"] = (df["Timestamp"] - df["Timestamp"].iloc[0]) * 1
