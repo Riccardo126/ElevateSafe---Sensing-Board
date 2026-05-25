@@ -56,7 +56,7 @@ void vIntegratorTask(void *pvParameters) {
     sampleCount++;
 
     if (sampleCount % 10 == 0) {
-      Serial.printf("%lu\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", millis(), accelX, accelY, accelZ, cum_vZ, positionZ);
+      Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", accelX, accelY, accelZ, cum_vZ, positionZ);
     }
   }
 }

@@ -44,8 +44,8 @@ extern SemaphoreHandle_t displayMutex;
 
 // Define your new I2C pins
 #ifdef BOARD_HELTEC
-  const int IMU_SDA_PIN = 41; //verde
-  const int IMU_SCL_PIN = 42; //arancione
+  const int IMU_SDA_PIN = 40; //verde
+  const int IMU_SCL_PIN = 41; //arancione
 #endif
 #ifdef BOARD_NODEMCU
   const int IMU_SDA_PIN = 26; //verde

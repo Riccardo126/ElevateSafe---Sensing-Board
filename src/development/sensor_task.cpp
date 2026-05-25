@@ -4,27 +4,40 @@
 
 // --- TASK 1: Sensor Reading (triggered by hardware timer) ---
 void vSensorTask(void *pvParameters) {
+  // first time imu axis alignment and calibration
+  #ifdef HAS_LSM6DS3
+    myIMU.readFloatAccelX();
+  #endif
+  #ifdef HAS_MPU6050
+    sensors_event_t accel, gyro, temp;
+    myIMU.getEvent(&accel, &gyro, &temp);
+    float angleXYZ[3] = {gyro.gyro.x, gyro.gyro.y, gyro.gyro.z};
+  #endif
   SensorData currentData;
 
   for (;;) {
     // Wait for hardware timer to trigger (1kHz)
     if (xSemaphoreTake(samplingTrigger, portMAX_DELAY) == pdTRUE) {         
       #ifdef HAS_LSM6DS3
-        currentData.accelXYZ[0] = myIMU.readFloatAccelX() - CALIB_X;
-        currentData.accelXYZ[1] = myIMU.readFloatAccelY() - CALIB_Y;
-        currentData.accelXYZ[2] = myIMU.readFloatAccelZ() - CALIB_Z;
+        // deadband = 0.005
+        float calibratedX = myIMU.readFloatAccelX() - CALIB_X;
+        float calibratedY = myIMU.readFloatAccelY() - CALIB_Y;
+        float calibratedZ = myIMU.readFloatAccelZ() - CALIB_Z;
+        currentData.accelXYZ[0] = fabsf(calibratedX) < 0.005 ? 0 : calibratedX;
+        currentData.accelXYZ[1] = fabsf(calibratedY) < 0.005 ? 0 : calibratedY;
+        currentData.accelXYZ[2] = fabsf(calibratedZ) < 0.005 ? 0 : calibratedZ;
       #endif
       #ifdef HAS_MPU6050
         sensors_event_t accel, gyro, temp;
         myIMU.getEvent(&accel, &gyro, &temp);
-        // if calibrated value is lower than 0.05: set to 0
+        // deadband = 0.05
         float calibratedX = (accel.acceleration.x ) - CALIB_X;
         float calibratedY = (accel.acceleration.y ) - CALIB_Y;
         float calibratedZ = (accel.acceleration.z ) - CALIB_Z; // / 9.81f it measures differently
         currentData.accelXYZ[0] = fabsf(calibratedX) < 0.05 ? 0 : calibratedX;
         currentData.accelXYZ[1] = fabsf(calibratedY) < 0.05 ? 0 : calibratedY;
         currentData.accelXYZ[2] = fabsf(calibratedZ) < 0.05 ? 0 : calibratedZ; // / 9.81f it measures differently
-      #endif
+        #endif
       currentData.anomaly = false;
       currentData.floorHall = 0;
 

@@ -88,13 +88,13 @@ SemaphoreHandle_t displayMutex;
 #ifdef HAS_LSM6DS3
   #include <SparkFunLSM6DS3.h>
   LSM6DS3 myIMU(I2C_MODE, 0x6B);
-  float CALIB_X = 0.0, CALIB_Y = 0.0, CALIB_Z = 9.8;
+  float CALIB_X = 0.0, CALIB_Y = 0.0, CALIB_Z = 0.0;
 #endif
 #ifdef HAS_MPU6050
   #include <Adafruit_MPU6050.h>
   #include <Adafruit_Sensor.h>
   Adafruit_MPU6050 myIMU;
-  float CALIB_X = 0.42, CALIB_Y = 0.1160, CALIB_Z = 9.2875; 
+  float CALIB_X = 0.5955, CALIB_Y = 0.1160, CALIB_Z = 9.2875; 
 #endif
 
 const int HALL_FLOOR_PIN = 2;
@@ -182,14 +182,16 @@ void setup() {
   delay(100);  // Wait for sensor to power up
   scanI2C(Wire, "Wire(IMU)");
 
+  bool imuStatus = false;
 
   #ifdef HAS_LSM6DS3
     debugPrintln("Initializing LSM6DS3...");
-    bool imuStatus = static_cast<bool>(myIMU.begin());
+    status_t imuS = myIMU.begin();
+    imuStatus = (imuS == IMU_SUCCESS);
   #endif
   #ifdef HAS_MPU6050
     debugPrintln("Initializing MPU6050...");
-    bool imuStatus = !myIMU.begin(0x68, &Wire); // looks like 0=success, 1=failure, opposite of usual Arduino convention
+    imuStatus = !myIMU.begin(0x68, &Wire); // looks like 0=success, 1=failure, opposite of usual Arduino convention
     if (!imuStatus) myIMU.setAccelerometerRange(MPU6050_RANGE_2_G);
   #endif  
 
