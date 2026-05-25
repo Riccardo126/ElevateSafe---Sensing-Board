@@ -167,6 +167,15 @@ void setup() {
     } else {
       debugPrintln("OLED init OK");
     }
+
+    
+    // add to solve snow problem on oled:
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println("HELLO FROM SENSING NODE");
+    display.display();
   #endif
 
   // 1. Initialize the second I2C bus (Wire) with your custom pins
@@ -272,7 +281,7 @@ void setup() {
   xTaskCreatePinnedToCore(vFilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
   xTaskCreatePinnedToCore(vIntegratorTask, "IntegratorTask", 4096, NULL, 2, &IntegratorTaskHandle, 0);
   //xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
-  //xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
+  xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }
 
 void loop() {
