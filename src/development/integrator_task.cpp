@@ -21,6 +21,7 @@ void vIntegratorTask(void *pvParameters) {
   uint16_t hallPrev = 0; // previous hall reading for static detection
   bool isStatic = false; // flag to indicate if the elevator is static
   uint16_t staticCounterThreshold = SAMPLE_RATE_HZ * 1; // number of consecutive samples to consider the elevator as static (e.g., 100 samples at 1kHz = 100ms)
+  uint32_t lastTimeStoppedMs = 0; // timestamp of the last time the elevator was detected as stopped
 
   debugPrintln("[IntegratorTask] Started");
 
@@ -62,11 +63,15 @@ void vIntegratorTask(void *pvParameters) {
       hallStaticCounter++;
       if (hallStaticCounter >= staticCounterThreshold) {
         debugPrint("im stopped");
+        if (!isStatic) lastTimeStoppedMs = millis();
         isStatic = true;
         // reset stuff
         cum_vZ = 0.0f;
         accelZ = 0.0f;
+        prevVelocityZ = 0.0f;
+        prevAccelZ = 0.0f;
         // positionZ = 0.0f;
+        
       }
     } else {
       hallStaticCounter = 0;
@@ -80,6 +85,16 @@ void vIntegratorTask(void *pvParameters) {
     prevVelocityZ = cum_vZ;
     sampleCount++;
 
+    // check elevator stuck between floors: no hall and speed 0
+    if (fabsf(floorHall) <= 100 && fabsf(cum_vZ) <= 0.05) {
+      uint32_t nowMs = millis();
+      CommData commOut;
+      if (nowMs - lastTimeStoppedMs >= 500) { // if we've been stopped for at least 500ms
+        commOut.anomalyType = 2; // Placeholder for actual anomaly type
+        commOut.elevatorID = 1; // Placeholder for actual elevator ID
+        xQueueSendToBack(commSensorQueue, &commOut, 5);
+      }
+    }
     if (sampleCount % 5 == 0) {
       //Serial.printf("%.3f\t%.3f\n", cum_vZ, positionZ);
     }

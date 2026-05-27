@@ -5,8 +5,8 @@
 // --- TASK 1.5 : Data Filtering
 #define WINDOW_SIZE     (SAMPLES_PER_BLOCK / 4)
 #define SLIDING_STEP    (WINDOW_SIZE / 4)
-#define ALPHA_FAST      0.35f
-#define ALPHA_SLOW      0.08f
+#define ALPHA_FAST      0.40f
+#define ALPHA_SLOW      0.05f
 #define ANOMALY_THR_X   1.0f
 #define ANOMALY_THR_Y   1.0f
 #define ANOMALY_THR_Z   2.4f
@@ -19,7 +19,7 @@
     2 = filtri tutto EMA, 
     3 = solo anomalie EMA
     */
-/*void vFilterTask(void *pvParameters) {
+void vFilterTask(void *pvParameters) {
     // finestra circolare solo per Z (X e Y non servono per la media)
     float windowZ[WINDOW_SIZE] = {0};
     int   head    = 0;
@@ -64,7 +64,7 @@
         emaYslow = ALPHA_SLOW * y + (1.0f - ALPHA_SLOW) * emaYslow;
         emaZslow = ALPHA_SLOW * z + (1.0f - ALPHA_SLOW) * emaZslow;
 
-        emaHall = ALPHA_FAST * hall + (1.0f - ALPHA_FAST) * emaHall;
+        emaHall = ALPHA_SLOW * hall + (1.0f - ALPHA_SLOW) * emaHall;
 
         if (FILTER_TYPE == 1) {
             // --- finestra circolare solo per Z ---
@@ -116,16 +116,14 @@
             // --- EMA tutto ---
             out.accelXYZ[0] = emaXfast;
             out.accelXYZ[1] = emaYfast;
-            out.accelXYZ[2] = emaZfast;
-            out.anomaly     = anomalyX || anomalyY || anomalyZ ? true : false;  
+            out.accelXYZ[2] = emaZfast;  
         } else if (FILTER_TYPE == 3) {
             // --- solo anomalie EMA: se non anomalia, passa i dati raw ---
             out.accelXYZ[0] = anomalyX ? emaXslow : x;
             out.accelXYZ[1] = anomalyY ? emaYslow : y;
-            out.accelXYZ[2] = anomalyZ ? emaZslow : z;
-            out.anomaly     = anomalyX || anomalyY || anomalyZ ? true : false; 
-            
+            out.accelXYZ[2] = anomalyZ ? emaZslow : z;            
         }
+        out.anomaly     = anomalyX || anomalyY || anomalyZ ? true : false;
         out.floorHall = emaHall;
         
         xStreamBufferSend(filteredSensorStreamBuffer, &out, sizeof(SensorData), 5);
@@ -135,14 +133,14 @@
             if (nowMs - lastAnomalyPacketMs >= ANOMALY_COOLDOWN_MS) {
                 commOut.anomalyType = 1; // Placeholder for actual anomaly type
                 commOut.elevatorID = 1; // Placeholder for actual elevator ID
-                xStreamBufferSend(commSensorStreamBuffer, &commOut, sizeof(CommData), 5);
+                xQueueSendToBack(commSensorQueue, &commOut, 5);
                 lastAnomalyPacketMs = nowMs;
             }
         }
 
         printCount++;
         if (printCount % 5 == 0) {
-            Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%i\n", x, y, z, emaXslow, emaYslow, emaZslow, emaXfast, emaYfast, emaZfast, emaHall);
+            Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", x, y, z, emaXslow, emaYslow, emaZslow, emaXfast, emaYfast, emaZfast, emaHall);
             printCount = 0;
         }
 
@@ -163,8 +161,10 @@ float median(float arr[], int size) {
         }
     }
     return (size % 2 == 0) ? (temp[size/2 - 1] + temp[size/2]) / 2.0 : temp[size/2];
-}*/
+}
 
+
+/*
 void vFilterTask(void *pvParameters) {
     // finestra circolare solo per Z (X e Y non servono per la media)
     float windowZ[WINDOW_SIZE] = {0};
@@ -350,3 +350,4 @@ void vFilterTask(void *pvParameters) {
         sampleCount++;
     }
 }
+*/

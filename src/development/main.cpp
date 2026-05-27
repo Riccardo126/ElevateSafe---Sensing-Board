@@ -47,7 +47,7 @@ TaskHandle_t IntegratorTaskHandle;
 // StreamBuffer for efficient binary data transfer
 StreamBufferHandle_t sensorStreamBuffer; // raw sensor data from SensorTask to FilterTask 
 StreamBufferHandle_t filteredSensorStreamBuffer; // filtered data from FilterTask to IntegratorTask
-StreamBufferHandle_t commSensorStreamBuffer; // raw sensor data from SensorTask to CommTask
+QueueHandle_t commSensorQueue; // anomaly packets from multiple tasks to CommTask
 QueueHandle_t velocityQueue; // For sending velocity estimates from IntegratorTask to CommTask
 
 // Semaphore to trigger sampling at precise 1kHz
@@ -235,12 +235,9 @@ void setup() {
     STREAM_BUFFER_SIZE,
     SAMPLES_PER_BLOCK * sizeof(SensorData)  // Trigger level: one full block
   );
-  commSensorStreamBuffer = xStreamBufferCreate(
-    20,
-    sizeof(CommData)  // Trigger level: one full block
-  );
+  commSensorQueue = xQueueCreate(20, sizeof(CommData));
   
-  if (sensorStreamBuffer == NULL || filteredSensorStreamBuffer == NULL || commSensorStreamBuffer == NULL) {
+  if (sensorStreamBuffer == NULL || filteredSensorStreamBuffer == NULL || commSensorQueue == NULL) {
     debugPrintln("ERROR: StreamBuffer creation failed!");
     while(1); // halt
   } 
@@ -286,8 +283,8 @@ void setup() {
   // Create Tasks
   xTaskCreatePinnedToCore(vSensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
   xTaskCreatePinnedToCore(vFilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
-  //xTaskCreatePinnedToCore(vIntegratorTask, "IntegratorTask", 4096, NULL, 2, &IntegratorTaskHandle, 0);
-  //xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
+  xTaskCreatePinnedToCore(vIntegratorTask, "IntegratorTask", 4096, NULL, 2, &IntegratorTaskHandle, 0);
+  xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
   xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }
 
