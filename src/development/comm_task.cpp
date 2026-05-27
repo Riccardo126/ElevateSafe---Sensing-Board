@@ -4,7 +4,7 @@
 
 // --- TASK 2: Communication - sends data blocks ---
 void vCommTask(void *pvParameters) {
-  auto totalBytes = SAMPLES_PER_BLOCK * sizeof(SensorData); 
+  auto totalBytes = sizeof(CommData); 
   uint8_t blockBuffer[totalBytes];
   
   uint32_t blocksSent = 0;
@@ -13,13 +13,13 @@ void vCommTask(void *pvParameters) {
   for (;;) {
     // Block until we have a full block of 50 samples
     size_t receivedBytes = xStreamBufferReceive(
-      filteredSensorStreamBuffer, 
+      commSensorStreamBuffer, 
       blockBuffer, 
       totalBytes, 
       portMAX_DELAY  // Wait indefinitely for full block
     );
         
-    if (receivedBytes != totalBytes) {
+    if (totalBytes != sizeof(CommData)) {
       debugPrint("[CommTask] Received incomplete block: %d bytes\n", receivedBytes);
       continue;
     }

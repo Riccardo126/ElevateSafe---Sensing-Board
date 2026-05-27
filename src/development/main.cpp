@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <esp_timer.h>
+#include "WiFi.h"
 #include <freertos/stream_buffer.h>
 #include "display_task.h"
 #include "comm_task.h"
@@ -97,10 +98,7 @@ SemaphoreHandle_t displayMutex;
   float CALIB_X = 0.5955, CALIB_Y = 0.1160, CALIB_Z = 9.2875; 
 #endif
 
-const int HALL_FLOOR_PIN = 2;
-
-// Block header for synchronization - defined in shared.h
-
+const int HALL_FLOOR_PIN = 7;
 
 void scanI2C(TwoWire &bus, const char *busName) {
   debugPrint("I2C scan on %s...\n", busName);
@@ -143,6 +141,10 @@ void setup() {
   }
   debugPrintln("\n[BOOT] ElevateSafe start");
   delay(3000);
+
+  // disable bluetooth and wifi
+  WiFi.mode(WIFI_OFF); // Disattiva completamente il WiFi
+  btStop(); // Disattiva completamente il Bluetooth
 
   // Heltec V3 powers OLED through Vext (active LOW).
   #ifdef HAS_OLED
@@ -209,9 +211,14 @@ void setup() {
     debugPrintln("ERROR: IMU initialization failed!");
     while(1); // halt
   }
-
+  // Hall setup
+  debugPrintln("[BOOT] Initializing Hall sensor pin...");
+  pinMode(HALL_FLOOR_PIN, INPUT);
+  analogReadResolution(12);
+  analogSetAttenuation(ADC_11db); // ADC Attenuation: 11dB allows reading up to ~3.1V
+  
+  
   debugPrintln("[BOOT] Initializing FreeRTOS objects");
-
   // Create display mutex for thread-safe access to latestAccelZ
   displayMutex = xSemaphoreCreateMutex();
   if (displayMutex == NULL) {
@@ -229,8 +236,8 @@ void setup() {
     SAMPLES_PER_BLOCK * sizeof(SensorData)  // Trigger level: one full block
   );
   commSensorStreamBuffer = xStreamBufferCreate(
-    STREAM_BUFFER_SIZE,
-    SAMPLES_PER_BLOCK * sizeof(SensorData)  // Trigger level: one full block
+    20,
+    sizeof(CommData)  // Trigger level: one full block
   );
   
   if (sensorStreamBuffer == NULL || filteredSensorStreamBuffer == NULL || commSensorStreamBuffer == NULL) {
@@ -279,7 +286,7 @@ void setup() {
   // Create Tasks
   xTaskCreatePinnedToCore(vSensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
   xTaskCreatePinnedToCore(vFilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
-  xTaskCreatePinnedToCore(vIntegratorTask, "IntegratorTask", 4096, NULL, 2, &IntegratorTaskHandle, 0);
+  //xTaskCreatePinnedToCore(vIntegratorTask, "IntegratorTask", 4096, NULL, 2, &IntegratorTaskHandle, 0);
   //xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
   xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }
