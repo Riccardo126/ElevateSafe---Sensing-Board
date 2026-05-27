@@ -19,7 +19,7 @@
     2 = filtri tutto EMA, 
     3 = solo anomalie EMA
     */
-void vFilterTask(void *pvParameters) {
+/*void vFilterTask(void *pvParameters) {
     // finestra circolare solo per Z (X e Y non servono per la media)
     float windowZ[WINDOW_SIZE] = {0};
     int   head    = 0;
@@ -137,6 +137,7 @@ void vFilterTask(void *pvParameters) {
                 lastAnomalyPacketMs = nowMs;
             }
         }
+        
 
         printCount++;
         if (printCount % 5 == 0) {
@@ -146,7 +147,7 @@ void vFilterTask(void *pvParameters) {
 
     }
     
-}
+}*/
 
 float median(float arr[], int size) {
     float temp[size];
@@ -164,7 +165,6 @@ float median(float arr[], int size) {
 }
 
 
-/*
 void vFilterTask(void *pvParameters) {
     // finestra circolare solo per Z (X e Y non servono per la media)
     float windowZ[WINDOW_SIZE] = {0};
@@ -183,8 +183,6 @@ void vFilterTask(void *pvParameters) {
     uint32_t printCount = 0;
     uint32_t lastAnomalyPacketMs = 0;
 
-    uint32_t sampleCount = 0; // keep track from start
-
     const float dt = 1.0f / SAMPLE_RATE_HZ;
     float prevAccelZ = 0.0f;
     float prevVelocityZ = 0.0f;
@@ -193,12 +191,6 @@ void vFilterTask(void *pvParameters) {
     float positionZ = 0.0f;
     float maxAccelZ = 0.0f; // for now only local
     bool hasPrevAccel = false;
-
-    uint16_t hallStaticCounter = 0; // counts how many consecutive samples have the same hall reading (for static detection)
-    float hallPrev = 0.0f; // previous hall reading for static detection (use float to match emaHall)
-    bool isStatic = false; // flag to indicate if the elevator is static
-    uint16_t staticCounterThreshold = SAMPLE_RATE_HZ * 1;
-
     for (;;) {
         size_t received = xStreamBufferReceive(
             sensorStreamBuffer, &block,
@@ -268,7 +260,6 @@ void vFilterTask(void *pvParameters) {
         // --- manda sempre i dati filtrati, anomaly è solo un flag ---
         SensorData out;
         CommData commOut;
-        out.anomaly = (anomalyX || anomalyY || anomalyZ) ? true : false;
         
         if (FILTER_TYPE == 1) {
             // --- HAMPel: NON COMPLETATO
@@ -279,75 +270,43 @@ void vFilterTask(void *pvParameters) {
             // --- EMA tutto ---
             out.accelXYZ[0] = emaXfast;
             out.accelXYZ[1] = emaYfast;
-            out.accelXYZ[2] = emaZfast;
+            out.accelXYZ[2] = emaZfast;  
         } else if (FILTER_TYPE == 3) {
             // --- solo anomalie EMA: se non anomalia, passa i dati raw ---
             out.accelXYZ[0] = anomalyX ? emaXslow : x;
             out.accelXYZ[1] = anomalyY ? emaYslow : y;
             out.accelXYZ[2] = anomalyZ ? emaZslow : z;            
         }
+        out.anomaly     = anomalyX || anomalyY || anomalyZ ? true : false;
         out.floorHall = emaHall;
         
-        //xStreamBufferSend(filteredSensorStreamBuffer, &out, sizeof(SensorData), 5);
+        xStreamBufferSend(filteredSensorStreamBuffer, &out, sizeof(SensorData), 5);
 
         if (anomalyX || anomalyY || anomalyZ) {
             uint32_t nowMs = millis();
             if (nowMs - lastAnomalyPacketMs >= ANOMALY_COOLDOWN_MS) {
                 commOut.anomalyType = 1; // Placeholder for actual anomaly type
                 commOut.elevatorID = 1; // Placeholder for actual elevator ID
-                xStreamBufferSend(commSensorStreamBuffer, &commOut, sizeof(CommData), 5);
+                xQueueSendToBack(commSensorQueue, &commOut, 5);
                 lastAnomalyPacketMs = nowMs;
             }
         }
-
         if (!hasPrevAccel) { // First sample, just initialize
-            prevAccelZ = emaZfast; 
-            hasPrevAccel = true;
-            hallPrev = emaHall;
-            sampleCount++;
-            continue;
-            }
-
+        prevAccelZ = emaZfast;
+        hasPrevAccel = true;
+        continue;
+    }
+        
         // Trapezoidal integration for velocity, instant and cumulative, and for distance
         delta_vZ = 0.5f * (prevAccelZ + emaZfast) * dt; // Area of trapezoid for this interval
-        if (DEADBANDING) {
-        delta_vZ = fabsf(delta_vZ) < DEADBAND_THR/10.0f ? 0 : delta_vZ; // Deadband for velocity
-        }
         cum_vZ = prevVelocityZ + delta_vZ; // Update cumulative velocity
-        
-        positionZ += 0.5f * (prevVelocityZ + cum_vZ) * dt; // Trapezoidal integration for distance
-
-        // Static detection based on hall sensor
-        if (fabsf(emaHall) >= 250.0f && fabsf(emaHall - hallPrev) <= 0.30f * fabsf(hallPrev)) { // stable within 30%
-            hallStaticCounter++;
-        } else {
-            hallStaticCounter = 0;
-            isStatic = false;
-        }
-        if (hallStaticCounter >= staticCounterThreshold) {
-            debugPrint("im stopped");
-            isStatic = true;
-            // reset velocity, keep filter state to avoid transients
-            cum_vZ = 0.0f;
-            prevVelocityZ = 0.0f;
-            // do not zero emaZfast; keep prevAccelZ aligned to current filtered accel
-            prevAccelZ = emaZfast;
-        }
-        hallPrev = emaHall;
-
-        if (velocityQueue != NULL) xQueueOverwrite(velocityQueue, &cum_vZ);
-
-        prevAccelZ = emaZfast;
-        prevVelocityZ = cum_vZ;
 
         printCount++;
-        if (printCount % 10 == 0) {
-            Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n",
-                x, y, z, emaXslow, emaYslow, emaZslow, emaXfast, emaYfast, emaZfast, emaHall, cum_vZ, positionZ);
+        if (printCount % 5 == 0) {
+            Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", z, emaZslow, emaZfast, emaHall, cum_vZ);
             printCount = 0;
         }
 
-        sampleCount++;
     }
+    
 }
-*/

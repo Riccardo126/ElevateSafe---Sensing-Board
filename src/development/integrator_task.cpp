@@ -52,7 +52,7 @@ void vIntegratorTask(void *pvParameters) {
     // Trapezoidal integration for velocity, instant and cumulative, and for distance
     delta_vZ = 0.5f * (prevAccelZ + accelZ) * dt; // Area of trapezoid for this interval
     if (DEADBANDING) {
-      delta_vZ = fabsf(delta_vZ) < DEADBAND_THR/50.0f ? 0 : delta_vZ; // Deadband for velocity
+      delta_vZ = fabsf(delta_vZ) < (DEADBAND_THR * dt) ? 0 : delta_vZ; // Deadband for velocity (scaled by dt)
     }
     cum_vZ = prevVelocityZ + delta_vZ; // Update cumulative velocity
     

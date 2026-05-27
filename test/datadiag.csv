@@ -1,4 +1,4 @@
-Program Time [s],accel x,accel y,accel z,ema slow x,ema slow y,ema slow z,ema fast x,ema fast y,ema fast z,data 9
+Program Time [s],accel x,accel y,accel z,ema slow x,ema slow y,ema slow z,ema fast x,ema fast y,ema fast z,hall
 9.84926,0,0.221,0,-0.003,0.186,-0,-0,0.176,-0,11.775
 9.87953,0,0.178,0,-0.012,0.184,-0,-0.003,0.198,-0,11.098
 9.90934,0,0.182,0,-0.01,0.183,-0,-0.033,0.2,-0,11.213

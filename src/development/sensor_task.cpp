@@ -14,22 +14,25 @@ void vSensorTask(void *pvParameters) {
     float angleXYZ[3] = {gyro.gyro.x, gyro.gyro.y, gyro.gyro.z};
   #endif
   SensorData currentData;
+  auto clampAccel = [](float value) {
+    return constrain(value, -1.2f, 1.2f);
+  };
 
   for (;;) {
     // Wait for hardware timer to trigger (1kHz)
     if (xSemaphoreTake(samplingTrigger, portMAX_DELAY) == pdTRUE) {         
       #ifdef HAS_LSM6DS3
         if (DEADBANDING) {// deadband = 0.005
-        float calibratedX = (myIMU.readFloatAccelX() - CALIB_X) * 9.81f; // convert to m/s^2
-        float calibratedY = (myIMU.readFloatAccelY() - CALIB_Y) * 9.81f; // convert to m/s^2
-        float calibratedZ = (myIMU.readFloatAccelZ() - CALIB_Z) * 9.81f; // convert to m/s^2
+        float calibratedX = clampAccel((myIMU.readFloatAccelX() - CALIB_X) * 9.81f); // convert to m/s^2
+        float calibratedY = clampAccel((myIMU.readFloatAccelY() - CALIB_Y) * 9.81f); // convert to m/s^2
+        float calibratedZ = clampAccel((myIMU.readFloatAccelZ() - CALIB_Z) * 9.81f); // convert to m/s^2
         currentData.accelXYZ[0] = fabsf(calibratedX) < DEADBAND_THR ? 0 : calibratedX;
         currentData.accelXYZ[1] = fabsf(calibratedY) < DEADBAND_THR ? 0 : calibratedY; 
         currentData.accelXYZ[2] = fabsf(calibratedZ) < DEADBAND_THR ? 0 : calibratedZ; 
       } else {
-        currentData.accelXYZ[0] = (myIMU.readFloatAccelX() - CALIB_X) * 9.81f; // convert to m/s^2
-        currentData.accelXYZ[1] = (myIMU.readFloatAccelY() - CALIB_Y) * 9.81f; // convert to m/s^2
-        currentData.accelXYZ[2] = (myIMU.readFloatAccelZ() - CALIB_Z) * 9.81f; // convert to m/s^2
+        currentData.accelXYZ[0] = clampAccel((myIMU.readFloatAccelX() - CALIB_X) * 9.81f); // convert to m/s^2
+        currentData.accelXYZ[1] = clampAccel((myIMU.readFloatAccelY() - CALIB_Y) * 9.81f); // convert to m/s^2
+        currentData.accelXYZ[2] = clampAccel((myIMU.readFloatAccelZ() - CALIB_Z) * 9.81f); // convert to m/s^2
       }    
       #endif
       #ifdef HAS_MPU6050
@@ -37,16 +40,16 @@ void vSensorTask(void *pvParameters) {
         myIMU.getEvent(&accel, &gyro, &temp);
         if (DEADBANDING) { // deadband = 0.05 
           // deadband = 0.05
-          float calibratedX = (accel.acceleration.x ) - CALIB_X;
-          float calibratedY = (accel.acceleration.y ) - CALIB_Y;
-          float calibratedZ = (accel.acceleration.z ) - CALIB_Z; // / 9.81f it measures differently
+          float calibratedX = clampAccel((accel.acceleration.x) - CALIB_X);
+          float calibratedY = clampAccel((accel.acceleration.y) - CALIB_Y);
+          float calibratedZ = clampAccel((accel.acceleration.z) - CALIB_Z); // / 9.81f it measures differently
           currentData.accelXYZ[0] = fabsf(calibratedX) < DEADBAND_THR ? 0 : calibratedX;
           currentData.accelXYZ[1] = fabsf(calibratedY) < DEADBAND_THR ? 0 : calibratedY;
           currentData.accelXYZ[2] = fabsf(calibratedZ) < DEADBAND_THR ? 0 : calibratedZ; // / 9.81f it measures differently
         } else {
-          currentData.accelXYZ[0] = accel.acceleration.x - CALIB_X;
-          currentData.accelXYZ[1] = accel.acceleration.y - CALIB_Y;
-          currentData.accelXYZ[2] = accel.acceleration.z - CALIB_Z; // / 9.81f it measures differently
+          currentData.accelXYZ[0] = clampAccel(accel.acceleration.x - CALIB_X);
+          currentData.accelXYZ[1] = clampAccel(accel.acceleration.y - CALIB_Y);
+          currentData.accelXYZ[2] = clampAccel(accel.acceleration.z - CALIB_Z); // / 9.81f it measures differently
         }
         #endif
       currentData.anomaly = false;
