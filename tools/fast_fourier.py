@@ -1,92 +1,103 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy.fft import fft, ifft
+from scipy.signal import welch, get_window, spectrogram, find_peaks
 
-choose = "test/sugiudiag.csv"
-names = ['Program Time [s]', 'x', 'y', 'z', 'slow x', 'slow y', 'slow z', 'fast x', 'fast y', 'fast z', 'hall']
+choose = "test/010sugiudiag2.csv"
+names = ['Program Time [s]', 'z', 'slow z', 'fast z', 'hall', 'v']
 df = pd.read_csv(choose, names=names, header=0)
 
-# 1. Estraiamo i dati, togliamo i NaN e rimuoviamo l'offset (la media/gravità)
-segnale = df['fast z'].dropna().values
+# Estrai segnale e rimuovi offset
+segnale = df['fast z'].dropna().values.astype(float)
 segnale = segnale - np.mean(segnale)
 
-# 2. Parametri di campionamento
-sr = 1000.0
-ts = 1.0 / sr
+# CALCOLA fs dal CSV stesso
+timestamps = df['Program Time [s]'].dropna().values
+dt_array = np.diff(timestamps)
+dt_mean = np.mean(dt_array)
+fs = 1.0 / dt_mean
+ts = 1.0 / fs
 N = len(segnale)
 
-# 3. Creiamo l'asse del tempo t dinamico (lungo esattamente quanto N)
-t = np.arange(N) * ts
+print(f"\n=== ACQUISIZIONE ===")
+print(f"Sample rate misurato: {fs:.2f} Hz")
+print(f"Campioni totali: {N}")
+print(f"Durata: {timestamps[-1] - timestamps[0]:.2f} s")
 
-# 4. Calcolo FFT 
-X = fft(segnale)
-n = np.arange(N)
-T = N / sr
-freq = n / T 
+if N < 16:
+    raise SystemExit('Segnale troppo corto')
 
-half = N // 2
-magnitudes = np.abs(X)[:half]
-frequencies = freq[:half]
+# Windowing
+win_name = 'hann'
+win = get_window(win_name, N)
 
-# ==========================================
-# NUOVO: CALCOLO F_MAX (TEOREMA DI NYQUIST)
-# ==========================================
-picco_massimo = np.max(magnitudes)
+# === Welch PSD (robusto per segnali non periodici) ===
+nperseg = min(512, N)
+noverlap = nperseg // 2
+f, Pxx = welch(segnale, fs=fs, window=win_name, nperseg=nperseg, 
+                noverlap=noverlap, scaling='density')
+Pxx_db = 10.0 * np.log10(Pxx + 1e-20)
 
-# Impostiamo il rumore di fondo al 5% del picco più alto.
-# Se il tuo grafico è molto rumoroso, puoi alzare questo valore a 0.08 (8%) o 0.10 (10%)
-soglia_rumore = picco_massimo * 0.05 
-
-# Trovo tutti gli indici in cui il segnale supera il rumore
-indici_sopra_soglia = np.where(magnitudes > soglia_rumore)[0]
-
-# Prendo l'ULTIMO indice utile (la frequenza più alta che non è rumore)
-if len(indici_sopra_soglia) > 0:
-    indice_fmax = indici_sopra_soglia[-1]
-    f_max = frequencies[indice_fmax]
+# Peak picking migliorato
+threshold = np.percentile(Pxx_db, 85)
+peaks, props = find_peaks(Pxx_db, height=threshold, prominence=1.5)
+if len(peaks) > 0:
+    f_max = f[peaks[np.argmax(props['peak_heights'])]]
 else:
-    f_max = 0.0
+    f_max = f[np.argmax(Pxx_db)]
 
-# Calcolo Nyquist
-campionamento_teorico = f_max * 2
+print(f"Frequenza dominante: {f_max:.2f} Hz")
 
-print("\n=== RISULTATI TEOREMA DI NYQUIST ===")
-print(f"Frequenza Massima (f_max):   {f_max:.2f} Hz")
-print(f"Campionamento Nyquist (>2x): {campionamento_teorico:.2f} Hz")
-print(f"Campionamento Consigliato:   {campionamento_teorico * 1.2:.2f} Hz (con margine di sicurezza)")
-print("====================================\n")
+# === True FFT con normalizzazione corretta ===
+pad_len = 2 ** int(np.ceil(np.log2(N)))
+X = np.fft.rfft(segnale * win, n=pad_len)
+freqs_fft = np.fft.rfftfreq(pad_len, d=1.0 / fs)
 
-# ==========================================
-# 5. Plotting
-# ==========================================
-plt.figure(figsize=(14, 6))
+# Normalizzazione corretta col windowing
+window_correction = np.sum(win) / N
+mag_db = 20.0 * np.log10(np.abs(X) / np.sum(win) + 1e-20)
 
-plt.subplot(211)
-plt.stem(frequencies, magnitudes, 'b', markerfmt=" ", basefmt="-b")
+# === Spectrogram (anomalie time-varying) ===
+f_s, t_s, Sxx = spectrogram(segnale, fs=fs, window='hann', 
+                             nperseg=256, noverlap=200, mode='magnitude')
+Sxx_db = 10.0 * np.log10(Sxx + 1e-20)
 
-# Aggiungo le linee guida per farti capire cosa ha deciso l'algoritmo
-plt.axhline(y=soglia_rumore, color='r', linestyle='--', alpha=0.7, label='Soglia Rumore (5%)')
-plt.axvline(x=f_max, color='g', linestyle='-', linewidth=2, label=f'f_max ({f_max:.1f} Hz)')
+# Rileva anomalie
+anomaly_threshold = np.percentile(Sxx_db, 95)
+anomaly_times = t_s[np.max(Sxx_db, axis=0) > anomaly_threshold]
+print(f"Anomalie rilevate: {len(anomaly_times)} tempi")
 
-plt.xlabel('Freq (Hz)', fontsize=18)
-plt.ylabel('FFT Amplitude |X(freq)|', fontsize=18)
-plt.title('Spettro Frequenze e Taglio Nyquist', fontweight='bold', fontsize=20)
-plt.tick_params(axis='both', which='major', labelsize=16)
+# === Plot ===
+fig, axes = plt.subplots(3, 1, figsize=(14, 10))
 
-# Faccio uno zoom intelligente: inquadro da 0 fino a poco dopo la f_max
-# (uso max tra 50 e f_max+20 per evitare che il grafico sia troppo stretto se f_max è piccola)
-plt.xlim(0, max(50, f_max + 20)) 
-plt.legend(fontsize=14)
+# PSD
+axes[0].plot(f, Pxx_db, 'b-', linewidth=1.5, label='Welch PSD')
+axes[0].plot(freqs_fft, mag_db, 'orange', alpha=0.5, label='FFT (rfft)')
+axes[0].axvline(f_max, color='g', linestyle='--', label=f'f_max={f_max:.1f}Hz')
+axes[0].set_ylabel('PSD (dB)')
+axes[0].set_title('Power Spectral Density')
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+axes[0].set_xlim(0, min(fs/2, f_max * 3))
 
-plt.subplot(212)
-# Usiamo np.real() per plottare solo l'ampiezza fisica, evitando il warning
-plt.plot(t, np.real(ifft(X)), 'r')
-plt.xlabel('Time (s)', fontsize=18)
-plt.ylabel('Amplitude', fontsize=18)
-plt.title('Segnale Ricostruito (IFFT)', fontweight='bold', fontsize=20)
-plt.tick_params(axis='both', which='major', labelsize=16)
+# Spectrogram
+pcm = axes[1].pcolormesh(t_s, f_s, Sxx_db, shading='auto', cmap='viridis')
+axes[1].set_ylabel('Frequency (Hz)')
+axes[1].set_title('Spectrogram — anomalie in bianco/giallo')
+axes[1].set_ylim(0, min(fs/2, f_max * 3))
+plt.colorbar(pcm, ax=axes[1], label='dB')
 
+# Segnale nel tempo
+time = np.arange(N) * ts
+axes[2].plot(time, segnale, 'r-', linewidth=0.8)
+axes[2].set_xlabel('Time (s)')
+axes[2].set_ylabel('Amplitude')
+axes[2].set_title('Segnale detrended')
+axes[2].grid(True, alpha=0.3)
+
+# Evidenzia anomalie sullo spettrogramma
+for t_anom in anomaly_times:
+    axes[2].axvline(t_anom, color='orange', alpha=0.5, linestyle=':')
 
 plt.tight_layout()
 plt.show()

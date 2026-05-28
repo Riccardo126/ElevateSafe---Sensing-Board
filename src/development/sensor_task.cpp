@@ -15,7 +15,7 @@ void vSensorTask(void *pvParameters) {
   #endif
   SensorData currentData;
   auto clampAccel = [](float value) {
-    return constrain(value, -1.2f, 1.2f);
+    return constrain(value, -1.8f, 1.8f);
   };
 
   for (;;) {

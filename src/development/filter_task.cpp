@@ -165,6 +165,26 @@ float median(float arr[], int size) {
 }
 
 
+#define ALPHA_VIBRATION 0.2f // for the sliding window of vibration detection
+
+// Soglie per la Macchina a Stati 
+#define THR_UP_START    0.6f    // threshold per rilevare la partenza verso l'alto
+#define THR_UP_QUIET    0.15f   // threshold diventa costante
+#define THR_DOWN_START  -0.35f   // threshold per rilevare la partenza verso il basso
+#define THR_DOWN_QUIET  -0.12f  //threshold diventa costante
+#define THR_BRAKE_UP    -0.6f    // threshold per rilevare l'inizio della frenata verso l'alto
+#define THR_BRAKE_DOWN  0.25f     // threshold per rilevare l'inizio della frenata verso il basso
+#define HALL_AT_FLOOR   250.0f
+
+#define DEBOUNCE_DELAY 100 // ms, per evitare allarmi multipli di vibrazione in rapida successione
+
+enum ElevState { 
+    FERMO, 
+    PICCO_PARTENZA, 
+    VIAGGIO_COSTANTE, 
+    PICCO_FRENATA 
+};
+
 void vFilterTask(void *pvParameters) {
     // finestra circolare solo per Z (X e Y non servono per la media)
     float windowZ[WINDOW_SIZE] = {0};
@@ -191,6 +211,17 @@ void vFilterTask(void *pvParameters) {
     float positionZ = 0.0f;
     float maxAccelZ = 0.0f; // for now only local
     bool hasPrevAccel = false;
+
+    // Variabili della Macchina a Stati
+    ElevState currentState = FERMO;
+    bool travelingUp = false; 
+    float currentThrStart = THR_UP_START;
+    float currentThrQuiet = THR_UP_QUIET;
+    uint32_t stopTimer = 0;
+    bool misalignmentChecked = false;
+
+
+
     for (;;) {
         size_t received = xStreamBufferReceive(
             sensorStreamBuffer, &block,
@@ -235,6 +266,11 @@ void vFilterTask(void *pvParameters) {
         // --- sliding step ---
         if (++step < SLIDING_STEP) continue;
         step = 0;
+
+
+        // CANCELLO PER SPIKES
+        bool isAtFloor = (fabsf(emaHall) > HALL_AT_FLOOR);
+        float z_fsm = isAtFloor ? 0.0f : emaZfast;
 
         // --- anomaly detection ---
         bool anomalyX = false;
@@ -292,21 +328,144 @@ void vFilterTask(void *pvParameters) {
             }
         }
         if (!hasPrevAccel) { // First sample, just initialize
-        prevAccelZ = emaZfast;
-        hasPrevAccel = true;
-        continue;
-    }
+            prevAccelZ = emaZfast;
+            hasPrevAccel = true;
+            continue;
+        }
         
         // Trapezoidal integration for velocity, instant and cumulative, and for distance
         delta_vZ = 0.5f * (prevAccelZ + emaZfast) * dt; // Area of trapezoid for this interval
         cum_vZ = prevVelocityZ + delta_vZ; // Update cumulative velocity
 
         printCount++;
-        if (printCount % 5 == 0) {
-            Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", z, emaZslow, emaZfast, emaHall, cum_vZ);
+        if (printCount % 1 == 0) {
+            Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", z, emaZslow, emaZfast, emaHall, delta_vZ, cum_vZ);
             printCount = 0;
         }
 
     }
     
 }
+
+/*
+
+void vFilterTask(void *pvParameters) {
+    
+    
+
+    // Contatore per non intasare la Seriale
+    uint32_t printCounter = 0; 
+
+    for (;;) {
+        
+
+        
+
+
+        // ==========================================
+        // 1. RILEVAMENTO ANOMALIE VIBRAZIONE
+        // ==========================================
+
+        bool anomalyXY = (vibX > ANOMALY_THR_X || vibY > ANOMALY_THR_Y);
+        bool anomalyZ  = (vibZ > ANOMALY_THR_Z || fabsf(block.accelXYZ[2] - prevZ) > JERK_THR_Z);
+        prevZ = block.accelXYZ[2];
+
+        if (fabsf(emaXslow - emaXfast) > ANOMALY_THR_X || fabsf(emaYslow - emaYfast) > ANOMALY_THR_Y || fabsf(emaZslow - emaZfast) > ANOMALY_THR_Z) {
+            uint32_t nowMs = millis();
+            if (nowMs - lastAnomalyMs >= 2000) { 
+                CommData commOut;
+                commOut.anomalyType = anomalyZ ? 2 : 1;
+                commOut.elevatorID = 1;
+                xStreamBufferSend(commSensorStreamBuffer, &commOut, sizeof(CommData), 0);
+                debugPrintln("ALLARME VIBRAZIONE!");
+                lastAnomalyMs = nowMs;
+            }
+        }
+
+        // ==========================================
+        // 2. MACCHINA A STATI (L'Ascensore)
+        // ==========================================
+        switch (currentState) {
+            
+            case FERMO:
+                if (z_fsm > THR_UP_START) {
+                    currentState = PICCO_PARTENZA;
+                    travelingUp = true;
+                    currentThrStart = THR_UP_START;
+                    currentThrQuiet = THR_UP_QUIET;
+                    debugPrintln("Partenza verso l'ALTO");
+                    CommData commOut = {EVENT_USAGE_UP, 1};
+                    xStreamBufferSend(commSensorStreamBuffer, &commOut, sizeof(CommData), 0);
+                    
+                } else if (z_fsm < THR_DOWN_START) {
+                    currentState = PICCO_PARTENZA;
+                    travelingUp = false;
+                    currentThrStart = THR_DOWN_START;
+                    currentThrQuiet = THR_DOWN_QUIET;
+                    debugPrintln("Partenza verso il BASSO");
+                    CommData commOut = {EVENT_USAGE_DOWN, 1};
+                    xStreamBufferSend(commSensorStreamBuffer, &commOut, sizeof(CommData), 0);
+                }
+                
+                if (millis() - stopTimer > 1500 && !misalignmentChecked && !isAtFloor) {
+                    if (!isAtFloor) {
+                        debugPrintln("ALLARME: FERMO MA NON AL PIANO (Disallineato)!");
+                        CommData commOut = {EVENT_MISALIGNMENT, 1};
+                        xStreamBufferSend(commSensorStreamBuffer, &commOut, sizeof(CommData), 0);
+                    } else {
+                        debugPrintln("Cabina ferma e correttamente allineata.");
+                    }
+                    misalignmentChecked = true; 
+                }
+                break;
+
+            case PICCO_PARTENZA:
+                if (travelingUp){
+                    // In salita, attendiamo che l'accelerazione positiva scenda verso lo zero (quiete)
+                    if (z_fsm < currentThrQuiet) {
+                        currentState = VIAGGIO_COSTANTE;
+                        debugPrintln("... In viaggio a velocità costante ");
+                    }
+                } else {
+                    // In discesa, attendiamo che l'accelerazione negativa salga verso lo zero (quiete)
+                    if (z_fsm > currentThrQuiet) {
+                        currentState = VIAGGIO_COSTANTE;
+                        debugPrintln("... In viaggio a velocità costante (0g)");
+                    }
+                }
+                break;
+
+            case VIAGGIO_COSTANTE:
+                // --- Logica esplicita per l'inizio della frenata ---
+                if (travelingUp) {
+                    // In salita, freniamo quando l'accelerazione diventa negativa (decelerazione)
+                    if (z_fsm < THR_BRAKE_UP) {
+                        currentState = PICCO_FRENATA;
+                        debugPrintln("Inizio frenata in salita...");
+                    }
+                } else {
+                    // In discesa, freniamo quando l'accelerazione diventa positiva (decelerazione)
+                    if (z_fsm > THR_BRAKE_DOWN) {
+                        currentState = PICCO_FRENATA;
+                        debugPrintln("Inizio frenata in discesa...");
+                    }
+                }
+                break;
+
+            case PICCO_FRENATA:
+                // --- Logica esplicita per il raggiungimento della quiete ---
+                // Attendiamo che l'accelerazione torni vicina allo zero (quiete)
+                if (fabsf(z_fsm) < fabsf(currentThrQuiet)) {
+                    if(isAtFloor) {
+                        currentState = FERMO;
+                        stopTimer = millis();        // Avvia timer per controllo disallineamento
+                        misalignmentChecked = false; // Reset per il prossimo controllo
+                        debugPrintln("Ascensore fermo al piano.");
+                    } else {
+                        debugPrintln("Ascensore fermo, ma non al piano! (Possibile disallineamento)");
+                    }
+                }
+                break;
+        }
+    }
+}*/
