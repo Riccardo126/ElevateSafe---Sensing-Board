@@ -462,8 +462,12 @@ void vFilterTask(void *pvParameters) {
                     else if (millis() - stopTimer >= DEBOUNCE_DELAY) {
 
                         currentState = FERMO;
-                        stopTimer = 0;
-                        misalignmentChecked = false; // Reset per la prossima fermata
+                        stopTimer = millis();        // Avvia timer per controllo disallineamento
+                        misalignmentChecked = false; // Reset per il prossimo controllo
+                        debugPrintln("Ascensore fermo al piano.");
+                    } else {
+                        currentState = FERMO; // Rimaniamo fermi, ma non siamo al piano!
+                        debugPrintln("Ascensore fermo, ma non al piano! (Possibile disallineamento)");
                     }
                 }
                 else stopTimer = 0;
@@ -484,8 +488,8 @@ void vFilterTask(void *pvParameters) {
             oledCount = 0;
 
         }
-        if (printCount % 10 == 0) {
-            Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", z, emaZslow, emaZfast, emaHall, delta_vZ, cum_vZ);
+        if (printCount % 1 == 0) {
+            debugPrint("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", z, emaZslow, emaZfast, emaHall, delta_vZ, cum_vZ);
             printCount = 0;
 
         }
