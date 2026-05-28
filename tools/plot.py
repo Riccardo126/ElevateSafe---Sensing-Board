@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-CSV_PATH = "test/sugiudiag.csv"
+CSV_PATH = "test\\0210suugiugiu-1000hz.csv"
 
 # Program Time [s],accel x,accel y,accel z,ema slow x,ema slow y,ema slow z,ema fast x,ema fast y,ema fast z,data 9
 
