@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import welch, get_window, spectrogram, find_peaks
 
-choose = "test/010sugiudiag2.csv"
+choose = "test\\0210suugiugiu-1000hz.csv"
 names = ['Program Time [s]', 'z', 'slow z', 'fast z', 'hall', 'v']
-df = pd.read_csv(choose, names=names, header=0)
+df = pd.read_csv(choose, header=0)
 
 # Estrai segnale e rimuovi offset
 segnale = df['fast z'].dropna().values.astype(float)

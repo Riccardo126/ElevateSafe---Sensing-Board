@@ -359,6 +359,14 @@ void vFilterTask(void *pvParameters) {
         delta_vZ = 0.5f * (prevAccelZ + emaZfast) * dt; // Area of trapezoid for this interval
         cum_vZ = prevVelocityZ + delta_vZ; // Update cumulative velocity
 
+        float commBlock[5] = { z, emaZslow, emaZfast, emaHall, cum_vZ };
+        uint8_t header[] = {0xAA, 0xBB, 0xCC, 0xDD};
+        Serial.write(header, sizeof(header));
+        Serial.write(reinterpret_cast<const uint8_t*>(commBlock), sizeof(commBlock));
+
+        prevAccelZ = emaZfast;
+        prevVelocityZ = cum_vZ;
+
         // ==========================================
         // 2. MACCHINA A STATI (L'Ascensore)
         // ==========================================

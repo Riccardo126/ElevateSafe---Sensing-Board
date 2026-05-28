@@ -9,9 +9,9 @@ from datetime import datetime
 # Configuration
 SERIAL_PORT = '/dev/ttyUSB0'
 BAUD_RATE = 921600
-SAMPLES_PER_BLOCK = 50
+SAMPLES_PER_BLOCK = 1
 BYTES_PER_SAMPLE = 20
-BLOCK_SIZE = SAMPLES_PER_BLOCK * BYTES_PER_SAMPLE
+BLOCK_SIZE = BYTES_PER_SAMPLE
 # PREAMBLE LUNGO: Fondamentale per evitare i falsi positivi
 PREAMBLE = b'\xAA\xBB\xCC\xDD' 
 CSV_DIR = 'tools'
@@ -29,9 +29,9 @@ def get_progressive_filename():
     return os.path.join(CSV_DIR, f"sampling_{timestamp}.csv")
 
 def unpack_sensor_data(data):
-    # <fffii = Little Endian: 3 float, 2 int
-    accel_x, accel_y, accel_z, door_hall, floor_hall = struct.unpack('<fffii', data)
-    return (accel_x, accel_y, accel_z, door_hall, floor_hall)
+    # <fffff = Little Endian: 5 float
+    z, ema_zslow, ema_zfast, ema_hall, cum_vz = struct.unpack('<fffff', data)
+    return (z, ema_zslow, ema_zfast, ema_hall, cum_vz)
 
 def input_thread():
     global recording, file_handle, block_count
@@ -43,7 +43,7 @@ def input_thread():
                     fname = get_progressive_filename()
                     with file_lock:
                         file_handle = open(fname, 'w')
-                        file_handle.write("Timestamp,AccelX,AccelY,AccelZ,DoorHall,FloorHall\n")
+                        file_handle.write("Program Time [s], z, slow z, fast z, hall, v\n")
                         recording = True
                         block_count = 0
                     print(f"[INFO] Recording started -> {fname}")
@@ -112,13 +112,9 @@ def main():
                         ts = datetime.now().timestamp()
                         
                         csv_lines = []
-                        for i in range(SAMPLES_PER_BLOCK):
-                            offset = i * BYTES_PER_SAMPLE
-                            sample_bytes = block_data[offset:offset + BYTES_PER_SAMPLE]
-                            
-                            # Unpack veloce
-                            data = unpack_sensor_data(sample_bytes)
-                            csv_lines.append(f"{ts},{data[0]:.6f},{data[1]:.6f},{data[2]:.6f},{data[3]},{data[4]}")
+                        sample_bytes = block_data[:BYTES_PER_SAMPLE]
+                        data = unpack_sensor_data(sample_bytes)
+                        csv_lines.append(f"{ts},{data[0]:.6f},{data[1]:.6f},{data[2]:.6f},{data[3]:.6f},{data[4]:.6f}")
                         
                         file_handle.write("\n".join(csv_lines) + "\n")
                         # file_handle.flush() # Opzionale, rallenta un po' ma è più sicuro
