@@ -183,22 +183,15 @@ void oledPrint(const char* line1, const char* line2, const char* line3, float va
 #define ALPHA_VIBRATION 0.2f // for the sliding window of vibration detection
 
 // Soglie per la Macchina a Stati 
-#define THR_UP_START    0.6f    // threshold per rilevare la partenza verso l'alto
+#define THR_UP_START    0.4f    // threshold per rilevare la partenza verso l'alto
 #define THR_UP_QUIET    0.15f   // threshold diventa costante
-#define THR_DOWN_START  -0.35f   // threshold per rilevare la partenza verso il basso
+#define THR_DOWN_START  -0.2f   // threshold per rilevare la partenza verso il basso
 #define THR_DOWN_QUIET  -0.12f  //threshold diventa costante
-#define THR_BRAKE_UP    -0.6f    // threshold per rilevare l'inizio della frenata verso l'alto
-#define THR_BRAKE_DOWN  0.25f     // threshold per rilevare l'inizio della frenata verso il basso
+#define THR_BRAKE_UP    -0.2f    // threshold per rilevare l'inizio della frenata verso l'alto
+#define THR_BRAKE_DOWN  0.15f     // threshold per rilevare l'inizio della frenata verso il basso
 #define HALL_AT_FLOOR   250.0f
 
-#define DEBOUNCE_DELAY 100 // ms, per evitare allarmi multipli di vibrazione in rapida successione
-
-enum ElevState { 
-    FERMO, 
-    PICCO_PARTENZA, 
-    VIAGGIO_COSTANTE, 
-    PICCO_FRENATA 
-};
+#define DEBOUNCE_DELAY 200 // ms, per evitare allarmi multipli di vibrazione in rapida succession
 
 enum EventType {
     EVENT_NONE = 0,             // Nessun evento
@@ -237,7 +230,7 @@ void vFilterTask(void *pvParameters) {
     bool hasPrevAccel = false;
 
     // Variabili della Macchina a Stati
-    ElevState currentState = FERMO;
+    //ElevState currentState = FERMO;
     bool travelingUp = false; 
     float currentThrStart = THR_UP_START;
     float currentThrQuiet = THR_UP_QUIET;
@@ -245,6 +238,8 @@ void vFilterTask(void *pvParameters) {
     bool misalignmentChecked = false;
 
 
+    //  DEBOUNCING
+    uint32_t stateTimer =0;
 
     for (;;) {
         size_t received = xStreamBufferReceive(
@@ -274,6 +269,9 @@ void vFilterTask(void *pvParameters) {
         emaZslow = ALPHA_SLOW * z + (1.0f - ALPHA_SLOW) * emaZslow;
 
         emaHall = ALPHA_SLOW * hall + (1.0f - ALPHA_SLOW) * emaHall;
+
+
+        latestAccelZ = emaZfast; // per il display
 
         if (FILTER_TYPE == 1) {
             // --- finestra circolare solo per Z ---
@@ -373,74 +371,96 @@ void vFilterTask(void *pvParameters) {
         // 2. MACCHINA A STATI (L'Ascensore)
         // ==========================================
         switch (currentState) {
-            
             case FERMO:
-                if (z_fsm > THR_UP_START) {
-                    currentState = PICCO_PARTENZA;
-                    travelingUp = true;
-                    currentThrStart = THR_UP_START;
-                    currentThrQuiet = THR_UP_QUIET;
-                    //debugPrintln("Partenza verso l'ALTO");
-                    CommData commOut = {EVENT_USAGE_UP, 1};                    
-                } else if (z_fsm < THR_DOWN_START) {
-                    currentState = PICCO_PARTENZA;
-                    travelingUp = false;
-                    currentThrStart = THR_DOWN_START;
-                    currentThrQuiet = THR_DOWN_QUIET;
-                    //debugPrintln("Partenza verso il BASSO");
-                    CommData commOut = {EVENT_USAGE_DOWN, 1};
-                }
-                
-                if (millis() - stopTimer > 1500 && !misalignmentChecked) {
-                    if (!isAtFloor) {
-                        //debugPrintln("ALLARME: FERMO MA NON AL PIANO (Disallineato)!");
-                        CommData commOut = {EVENT_MISALIGNMENT, 1};
-                    } else {
-                        //debugPrintln("Cabina ferma e correttamente allineata.");
+                if(!misalignmentChecked) {
+                    if(stopTimer==0) stopTimer = millis();
+                    else if (millis() - stopTimer >= 1500) {
+                        if(!isAtFloor) {
+                            printf("fermo fuori dal piano");
+
+                            CommData commOut;
+                            commOut.anomalyType = 2; // Misalignment
+                            commOut.elevatorID = 1; // Placeholder for actual elevator ID
+                            
+                            xQueueSendToBack(commSensorQueue, &commOut, 5);
+                        }
+                        else {
+                            printf("fermo a piano");
+                        }
+                        misalignmentChecked = true;
                     }
-                    misalignmentChecked = true; 
                 }
-                //printf("FERMO --> %s",currentState == FERMO ? "FERMO" : (currentState == PICCO_PARTENZA ? "PARTENZA" : (currentState == VIAGGIO_COSTANTE ? "VIAGGIO" : "FRENATA")));
+                if (z_fsm > THR_UP_START) {
+                    if (stateTimer == 0) stateTimer = millis();
+                    else if (millis() - stateTimer >= 20) { // Deve durare > 50ms, non è uno spike
+                        currentState = PARTENZA;
+                        travelingUp = true;
+                        stateTimer = 0;
+                        stopTimer = 0;
+                        misalignmentChecked = false; // Reset per la prossima fermata
+                    }
+                }
+                else if (z_fsm < THR_DOWN_START) {
+                    if (stateTimer == 0) stateTimer = millis();
+                    else if (millis() - stateTimer >= 20) {
+                        currentState = PARTENZA;
+                        travelingUp = false;
+                        stateTimer = 0;
+                        stopTimer = 0;
+                        misalignmentChecked = false;
+                    }
+                }
+                else {
+                    stateTimer = 0; // Il segnale è tornato normale, lo spike è ignorato
+                }
                 break;
 
-            case PICCO_PARTENZA:
-                if (travelingUp){
-                    // In salita, attendiamo che l'accelerazione positiva scenda verso lo zero (quiete)
-                    if (z_fsm < currentThrQuiet) {
+            case PARTENZA:
+                if(fabsf(z_fsm) < THR_UP_QUIET) {
+                    if(stateTimer == 0) {
+                        stateTimer = millis(); 
+                    } 
+                    else if (millis() - stateTimer >= 500) {
                         currentState = VIAGGIO_COSTANTE;
-                        //printf("... In viaggio a velocità costante ");
+                        stateTimer = 0;
                     }
-                } else {
-                    // In discesa, attendiamo che l'accelerazione negativa salga verso lo zero (quiete)
-                    if (z_fsm > currentThrQuiet) {
-                        currentState = VIAGGIO_COSTANTE;
-                        //printf("... In viaggio a velocità costante (0g)");
-                    }
+                } 
+                else {
+                    stateTimer = 0; 
                 }
                 break;
 
             case VIAGGIO_COSTANTE:
-                // --- Logica esplicita per l'inizio della frenata ---
+                bool isBraking;
                 if (travelingUp) {
-                    // In salita, freniamo quando l'accelerazione diventa negativa (decelerazione)
-                    if (z_fsm < THR_BRAKE_UP) {
-                        currentState = PICCO_FRENATA;
-                        //printf("Inizio frenata in salita...");
-                    }
+                    isBraking = (z_fsm < THR_BRAKE_UP);
                 } else {
-                    // In discesa, freniamo quando l'accelerazione diventa positiva (decelerazione)
-                    if (z_fsm > THR_BRAKE_DOWN) {
-                        currentState = PICCO_FRENATA;
-                        //printf("Inizio frenata in discesa...");
-                    }
+                    isBraking = (z_fsm > THR_BRAKE_DOWN);
                 }
+
+                if(isBraking) {
+                    if(stateTimer == 0) stateTimer = millis();
+                    else if (millis() - stateTimer >= 50) {
+                        currentState = FRENATA;
+                        stateTimer = 0;
+                        stopTimer = 0; // reset stop timer when we enter braking state
+                    }
+                } else stateTimer = 0;
                 break;
 
-            case PICCO_FRENATA:
-                // --- Logica esplicita per il raggiungimento della quiete ---
-                // Attendiamo che l'accelerazione torni vicina allo zero (quiete)
-                if (fabsf(z_fsm) < fabsf(currentThrQuiet)) {
-                    if(isAtFloor) {
+            case FRENATA:
+                bool stillBraking;
+                if (travelingUp) {
+                    stillBraking = (z_fsm < THR_BRAKE_UP);
+                } else {
+                    stillBraking = (z_fsm > THR_BRAKE_DOWN);
+                }
+
+                if (stillBraking) stopTimer = 0;
+                else if (fabsf(z_fsm) < THR_UP_QUIET) {
+                    if(stopTimer == 0) stopTimer = millis();
+                    else if (millis() - stopTimer >= DEBOUNCE_DELAY) {
+
                         currentState = FERMO;
                         stopTimer = millis();        // Avvia timer per controllo disallineamento
                         misalignmentChecked = false; // Reset per il prossimo controllo
@@ -450,6 +470,7 @@ void vFilterTask(void *pvParameters) {
                         debugPrintln("Ascensore fermo, ma non al piano! (Possibile disallineamento)");
                     }
                 }
+                else stopTimer = 0;
                 break;
         }
 
