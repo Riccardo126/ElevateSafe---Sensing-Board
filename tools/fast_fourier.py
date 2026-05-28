@@ -1,22 +1,29 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.signal import welch, get_window, spectrogram, find_peaks
+from scipy.signal import welch, butter, sosfiltfilt, get_window, spectrogram, find_peaks
 
-choose = "test\\0210suugiugiu-1000hz.csv"
+# Improve plot readability: larger fonts for titles, labels, ticks and legends
+plt.rcParams.update({
+    'font.size': 12,
+    'axes.titlesize': 16,
+    'axes.labelsize': 13,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'legend.fontsize': 12,
+    'figure.titlesize': 15
+})
+
+choose = "test\\012susudiag-1000hz-migliore.csv"
 names = ['Program Time [s]', 'z', 'slow z', 'fast z', 'hall', 'v']
 df = pd.read_csv(choose, header=0)
 
-# Estrai segnale e rimuovi offset
+# Estrai segnale
 segnale = df['fast z'].dropna().values.astype(float)
-segnale = segnale - np.mean(segnale)
 
-# CALCOLA fs dal CSV stesso
+# Calcola fs dal CSV
 timestamps = df['Program Time [s]'].dropna().values
-dt_array = np.diff(timestamps)
-dt_mean = np.mean(dt_array)
-fs = 1.0 / dt_mean
-ts = 1.0 / fs
+fs = 1.0 / np.mean(np.diff(timestamps))
 N = len(segnale)
 
 print(f"\n=== ACQUISIZIONE ===")
@@ -24,21 +31,43 @@ print(f"Sample rate misurato: {fs:.2f} Hz")
 print(f"Campioni totali: {N}")
 print(f"Durata: {timestamps[-1] - timestamps[0]:.2f} s")
 
+# HIGH-PASS FILTER (rimuovi drift a bassissima frequenza)
+sos = butter(4, 0.5, btype='high', fs=fs, output='sos')
+segnale = sosfiltfilt(sos, segnale)
+
+# Detrend
+segnale = segnale - np.mean(segnale)
+
 if N < 16:
     raise SystemExit('Segnale troppo corto')
 
-# Windowing
-win_name = 'hann'
-win = get_window(win_name, N)
+# ============= FFT migliore =============
+# Applica una finestra (Hann) per ridurre sidelobes
+win = np.hanning(N)
+segnale_windowed = segnale * win
 
-# === Welch PSD (robusto per segnali non periodici) ===
-nperseg = min(512, N)
-noverlap = nperseg // 2
-f, Pxx = welch(segnale, fs=fs, window=win_name, nperseg=nperseg, 
-                noverlap=noverlap, scaling='density')
+# FFT diretta
+X = np.fft.rfft(segnale_windowed)
+freqs = np.fft.rfftfreq(N, d=1.0/fs)
+
+# Magnitudine single-sided corretta per la finestra
+magnitude = np.abs(X) * 2.0 / np.sum(win)
+magnitude[0] /= 2.0
+if N % 2 == 0:
+    magnitude[-1] /= 2.0
+
+# dB
+magnitude_db = 20.0 * np.log10(magnitude + 1e-20)
+
+# Frequenza dominante dalla FFT migliorata (windowed, single-sided)
+f_fft_peak = freqs[np.argmax(magnitude)]
+print(f"Frequenza dominante (FFT migliorato): {f_fft_peak:.2f} Hz")
+
+# ============= WELCH (la bella) =============
+f, Pxx = welch(segnale, fs=fs, window='hann', nperseg=512, noverlap=256)
 Pxx_db = 10.0 * np.log10(Pxx + 1e-20)
 
-# Peak picking migliorato
+# Rileva picchi
 threshold = np.percentile(Pxx_db, 85)
 peaks, props = find_peaks(Pxx_db, height=threshold, prominence=1.5)
 if len(peaks) > 0:
@@ -46,63 +75,86 @@ if len(peaks) > 0:
 else:
     f_max = f[np.argmax(Pxx_db)]
 
-print(f"Frequenza dominante: {f_max:.2f} Hz")
+print(f"Frequenza dominante (Welch): {f_max:.2f} Hz")
 
-# === True FFT con normalizzazione corretta ===
-pad_len = 2 ** int(np.ceil(np.log2(N)))
-X = np.fft.rfft(segnale * win, n=pad_len)
-freqs_fft = np.fft.rfftfreq(pad_len, d=1.0 / fs)
-
-# Normalizzazione corretta col windowing
-window_correction = np.sum(win) / N
-mag_db = 20.0 * np.log10(np.abs(X) / np.sum(win) + 1e-20)
-
-# Calcola magnitudine lineare single-sided corretta per la window
-# X è il risultato di rfft su (segnale*win) con lunghezza pad_len
-mag = np.abs(X) * 2.0 / np.sum(win)
-# DC non va raddoppiato
-mag[0] /= 2.0
-# Se pad_len è pari, l'ultimo bin è Nyquist e non va raddoppiato
-if pad_len % 2 == 0:
-    mag[-1] /= 2.0
-
-# === Spectrogram (anomalie time-varying) ===
+# ============= SPECTROGRAM =============
 f_s, t_s, Sxx = spectrogram(segnale, fs=fs, window='hann', 
                              nperseg=256, noverlap=200, mode='magnitude')
 Sxx_db = 10.0 * np.log10(Sxx + 1e-20)
 
-# Rileva anomalie
 anomaly_threshold = np.percentile(Sxx_db, 95)
 anomaly_times = t_s[np.max(Sxx_db, axis=0) > anomaly_threshold]
 print(f"Anomalie rilevate: {len(anomaly_times)} tempi")
 
-# === Plot ===
-fig, axes = plt.subplots(3, 1, figsize=(14, 10))
+# Frequenza suggerita dallo spettrogramma: bin con energia media massima
+spectrogram_profile = np.mean(Sxx_db, axis=1)
+f_spec = f_s[np.argmax(spectrogram_profile)]
+print(f"Frequenza suggerita dallo spettrogramma: {f_spec:.2f} Hz")
 
-# PSD
-axes[0].plot(f, Pxx_db, 'b-', linewidth=1.5, label='Welch PSD')
-axes[0].plot(freqs_fft, mag_db, 'orange', alpha=0.5, label='FFT (rfft)')
-axes[0].axvline(f_max, color='g', linestyle='--', label=f'f_max={f_max:.1f}Hz')
-axes[0].set_ylabel('PSD (dB)')
-axes[0].set_title('Power Spectral Density')
-axes[0].legend()
+# ============= PLOT =============
+fig, axes = plt.subplots(3, 1, figsize=(14, 11))
+
+'''
+# Plot 1: Confronto FFT semplice vs Welch 
+axes[0].plot(freqs, magnitude_db, 'orange', linewidth=0.5, alpha=0.7, label='FFT (hann windowed, db magnitudes)')
+axes[0].plot(f, Pxx_db, 'b-', linewidth=2.0, label='Welch PSD')
+axes[0].axvline(f_max, color='g', linestyle='--', linewidth=2, label=f'f_max={f_max:.2f}Hz')
+axes[0].axvline(f_spec, color='m', linestyle=':', linewidth=2, label=f'f_spec={f_spec:.2f}Hz')
+axes[0].set_ylabel('Magnitude (dB)')
+axes[0].set_title('FFT & Welch')
+axes[0].legend(loc='upper right', fontsize=12)
 axes[0].grid(True, alpha=0.3)
-axes[0].set_xlim(0, min(fs/2, f_max * 3))
+axes[0].set_xlim(0, min(fs/2, 10))
+axes[0].set_ylim(-80, -20) '''
 
-# Spectrogram
+# Plot 1: Segnale filtrato
+time = np.arange(N) * (1/fs)
+axes[0].plot(time, segnale, color='tab:red')
+axes[0].set_xlabel('Time (s)')
+axes[0].set_ylabel('Acceleration (m/s²),')
+axes[0].set_title('Original Signal (detrended)')
+
+# Plot 2: Spectrogram
 pcm = axes[1].pcolormesh(t_s, f_s, Sxx_db, shading='auto', cmap='viridis')
+axes[1].set_xlabel('Time (s)')
 axes[1].set_ylabel('Frequency (Hz)')
-axes[1].set_title('Spectrogram — anomalie in bianco/giallo')
-axes[1].set_ylim(0, min(fs/2, f_max * 3))
-plt.colorbar(pcm, ax=axes[1], label='dB')
+axes[1].set_title('Spectrogram')
+axes[1].set_ylim(0, 10)
+cbar = plt.colorbar(pcm, ax=axes[1], label='dB')
+cbar.set_label('dB', fontsize=12)
+cbar.ax.tick_params(labelsize=11)
 
-# FFT Magnitude (ampiezza lineare)
-axes[2].plot(freqs_fft, mag, 'r-', linewidth=1.0)
+# Plot 3: FFT normale (base, no dB)
+fft_basic = np.fft.fft(segnale)
+freqs_basic = np.fft.fftfreq(N, d=1.0 / fs)
+pos_mask = freqs_basic >= 0
+freqs_basic = freqs_basic[pos_mask]
+amp_basic = np.abs(fft_basic[pos_mask]) / N
+# Rileva picchi: usare le frequenze della FFT 'basic' (freqs_basic)
+# Scegli un percentile più alto per ignorare rumore di fondo (es. 90th)
+fftthreshold = np.percentile(amp_basic, 90)
+peaks, props = find_peaks(amp_basic, height=fftthreshold, prominence=(fftthreshold * 0.5))
+if len(peaks) > 0:
+    # scegli il picco con ampiezza maggiore tra quelli rilevati
+    peak_idx = peaks[np.argmax(props['peak_heights'])]
+    f_max = freqs_basic[peak_idx]
+else:
+    # fallback: prende il bin di massima ampiezza
+    peak_idx = np.argmax(amp_basic)
+    f_max = freqs_basic[peak_idx]
+print(f"Peak basic amp: {amp_basic[peak_idx]:.6e}")
+
+axes[2].plot(freqs_basic, amp_basic, 'r-', linewidth=0.8)
 axes[2].set_xlabel('Frequency (Hz)')
 axes[2].set_ylabel('Amplitude')
-axes[2].set_title('FFT Magnitude (linear)')
+axes[2].set_title('normal FFT')
+axes[2].axvline(f_max, color='g', linestyle='--', linewidth=2, label=f'best={f_max:.2f}Hz')
 axes[2].grid(True, alpha=0.3)
-axes[2].set_xlim(0, fs/2)
+axes[2].set_xlim(0, fs / 6)
+print(f"Frequenza dominante (normal FFT): {freqs_basic[np.argmax(amp_basic)]:.2f} Hz")
+print(f"Frequenza migliore 700percentile (normal FFT, picchi): {f_max:.2f} Hz")
+
+
 
 plt.tight_layout()
 plt.show()

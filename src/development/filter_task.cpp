@@ -248,6 +248,8 @@ void vFilterTask(void *pvParameters) {
         );
         if (received != sizeof(SensorData)) continue;
 
+        uint32_t start = micros();
+
         if (FILTER_TYPE == 0) {
             // --- no filter, just pass through ---
             xStreamBufferSend(filteredSensorStreamBuffer, &block, sizeof(SensorData), 0);
@@ -361,8 +363,8 @@ void vFilterTask(void *pvParameters) {
 
         float commBlock[5] = { z, emaZslow, emaZfast, emaHall, cum_vZ };
         uint8_t header[] = {0xAA, 0xBB, 0xCC, 0xDD};
-        Serial.write(header, sizeof(header));
-        Serial.write(reinterpret_cast<const uint8_t*>(commBlock), sizeof(commBlock));
+        //Serial.write(header, sizeof(header));
+        //Serial.write(reinterpret_cast<const uint8_t*>(commBlock), sizeof(commBlock));
 
         prevAccelZ = emaZfast;
         prevVelocityZ = cum_vZ;
@@ -488,12 +490,9 @@ void vFilterTask(void *pvParameters) {
             oledCount = 0;
 
         }
-        if (printCount % 1 == 0) {
-            debugPrint("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", z, emaZslow, emaZfast, emaHall, delta_vZ, cum_vZ);
-            printCount = 0;
-
-        }
-
+        debugPrint("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", x, y, emaXslow, emaYslow, emaXfast, emaYfast);
+  
+        uint32_t stop = micros();
     }
     
 }

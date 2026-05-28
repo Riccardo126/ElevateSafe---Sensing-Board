@@ -15,7 +15,7 @@
 
 // ========== DEBUG MODE CONFIGURATION ==========
 // Set to true for debug messages, false for actual serial communication
-bool DEBUG_MODE = false;
+bool DEBUG_MODE = true;
 
 // Helper functions for debug/communication output
 void debugPrint(const char* format, ...) {

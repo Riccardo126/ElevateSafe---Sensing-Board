@@ -1,8 +1,8 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
+CSV_PATH = "test\\010sugiudiag.csv"
 
-CSV_PATH = "test\sampling_2026-05-28_18-16-34.csv"
 
 # Program Time [s],accel x,accel y,accel z,ema slow x,ema slow y,ema slow z,ema fast x,ema fast y,ema fast z,data 9
 
@@ -41,7 +41,7 @@ ax.grid(True, linewidth=0.3, alpha=0.5)
 ax.legend(loc="upper right", fontsize=8)
 
 fig.tight_layout()
-fig.savefig("plot_z_hall_simple.png", dpi=120)
+#fig.savefig("plot_z_hall_simple.png", dpi=120)
 plt.show()
 
 
