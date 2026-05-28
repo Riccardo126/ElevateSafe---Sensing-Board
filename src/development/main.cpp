@@ -229,11 +229,11 @@ void setup() {
   // Create StreamBuffer for sensor data
   sensorStreamBuffer = xStreamBufferCreate(
     STREAM_BUFFER_SIZE,
-    SAMPLES_PER_BLOCK * sizeof(SensorData)  // Trigger level: one full block
+    sizeof(SensorData)  // Trigger level: wake as soon as one sample is available
   );
   filteredSensorStreamBuffer = xStreamBufferCreate(
     STREAM_BUFFER_SIZE,
-    SAMPLES_PER_BLOCK * sizeof(SensorData)  // Trigger level: one full block
+    sizeof(SensorData)  // Trigger level: wake as soon as one sample is available
   );
   commSensorQueue = xQueueCreate(20, sizeof(CommData));
   
@@ -285,7 +285,7 @@ void setup() {
   xTaskCreatePinnedToCore(vFilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
   xTaskCreatePinnedToCore(vIntegratorTask, "IntegratorTask", 4096, NULL, 2, &IntegratorTaskHandle, 0);
   xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
-  xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
+  //xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }
 
 void loop() {

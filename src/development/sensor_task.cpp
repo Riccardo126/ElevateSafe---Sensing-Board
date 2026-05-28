@@ -15,7 +15,7 @@ void vSensorTask(void *pvParameters) {
   #endif
   SensorData currentData;
   auto clampAccel = [](float value) {
-    return constrain(value, -1.8f, 1.8f);
+    return constrain(value, -2.0f, 2.0f);
   };
 
   for (;;) {
@@ -57,10 +57,11 @@ void vSensorTask(void *pvParameters) {
 
 
       // Update global variable for DisplayTask
+      /*
       if (xSemaphoreTake(displayMutex, 0) == pdTRUE) {
         latestAccelZ = currentData.accelXYZ[2];
         xSemaphoreGive(displayMutex);
-      }
+      }*/
 
       // Write to StreamBuffer with a small timeout so we can detect failures.
       size_t bytesSent = 0; 

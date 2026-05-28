@@ -164,7 +164,22 @@ float median(float arr[], int size) {
     return (size % 2 == 0) ? (temp[size/2 - 1] + temp[size/2]) / 2.0 : temp[size/2];
 }
 
-
+void oledPrint(const char* line1, const char* line2, const char* line3, float value) {
+      #ifdef HAS_OLED
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(0, 0);
+        display.println(line1);
+        display.println(line2);
+        display.println(line3);
+        display.setTextSize(2);
+        display.setCursor(0, 25);
+        display.print(value, 3);
+        display.println(" m/s");
+        display.display();
+      #endif
+}
 #define ALPHA_VIBRATION 0.2f // for the sliding window of vibration detection
 
 // Soglie per la Macchina a Stati 
@@ -185,6 +200,14 @@ enum ElevState {
     PICCO_FRENATA 
 };
 
+enum EventType {
+    EVENT_NONE = 0,             // Nessun evento
+    EVENT_VIBRATION_XY = 1,     // Vibrazione anomala (possibile urto contro le guide)
+    EVENT_MISALIGNMENT = 2,     // Ascensore fermo, ma sensore di Hall non rileva il piano
+    EVENT_USAGE_UP = 3,         // Partenza verso l'alto
+    EVENT_USAGE_DOWN = 4        // Partenza verso il basso
+};
+
 void vFilterTask(void *pvParameters) {
     // finestra circolare solo per Z (X e Y non servono per la media)
     float windowZ[WINDOW_SIZE] = {0};
@@ -201,6 +224,7 @@ void vFilterTask(void *pvParameters) {
     int   step     = 0;
     SensorData block;
     uint32_t printCount = 0;
+    uint32_t oledCount = 0;
     uint32_t lastAnomalyPacketMs = 0;
 
     const float dt = 1.0f / SAMPLE_RATE_HZ;
@@ -337,51 +361,6 @@ void vFilterTask(void *pvParameters) {
         delta_vZ = 0.5f * (prevAccelZ + emaZfast) * dt; // Area of trapezoid for this interval
         cum_vZ = prevVelocityZ + delta_vZ; // Update cumulative velocity
 
-        printCount++;
-        if (printCount % 1 == 0) {
-            Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", z, emaZslow, emaZfast, emaHall, delta_vZ, cum_vZ);
-            printCount = 0;
-        }
-
-    }
-    
-}
-
-/*
-
-void vFilterTask(void *pvParameters) {
-    
-    
-
-    // Contatore per non intasare la Seriale
-    uint32_t printCounter = 0; 
-
-    for (;;) {
-        
-
-        
-
-
-        // ==========================================
-        // 1. RILEVAMENTO ANOMALIE VIBRAZIONE
-        // ==========================================
-
-        bool anomalyXY = (vibX > ANOMALY_THR_X || vibY > ANOMALY_THR_Y);
-        bool anomalyZ  = (vibZ > ANOMALY_THR_Z || fabsf(block.accelXYZ[2] - prevZ) > JERK_THR_Z);
-        prevZ = block.accelXYZ[2];
-
-        if (fabsf(emaXslow - emaXfast) > ANOMALY_THR_X || fabsf(emaYslow - emaYfast) > ANOMALY_THR_Y || fabsf(emaZslow - emaZfast) > ANOMALY_THR_Z) {
-            uint32_t nowMs = millis();
-            if (nowMs - lastAnomalyMs >= 2000) { 
-                CommData commOut;
-                commOut.anomalyType = anomalyZ ? 2 : 1;
-                commOut.elevatorID = 1;
-                xStreamBufferSend(commSensorStreamBuffer, &commOut, sizeof(CommData), 0);
-                debugPrintln("ALLARME VIBRAZIONE!");
-                lastAnomalyMs = nowMs;
-            }
-        }
-
         // ==========================================
         // 2. MACCHINA A STATI (L'Ascensore)
         // ==========================================
@@ -393,30 +372,27 @@ void vFilterTask(void *pvParameters) {
                     travelingUp = true;
                     currentThrStart = THR_UP_START;
                     currentThrQuiet = THR_UP_QUIET;
-                    debugPrintln("Partenza verso l'ALTO");
-                    CommData commOut = {EVENT_USAGE_UP, 1};
-                    xStreamBufferSend(commSensorStreamBuffer, &commOut, sizeof(CommData), 0);
-                    
+                    //debugPrintln("Partenza verso l'ALTO");
+                    CommData commOut = {EVENT_USAGE_UP, 1};                    
                 } else if (z_fsm < THR_DOWN_START) {
                     currentState = PICCO_PARTENZA;
                     travelingUp = false;
                     currentThrStart = THR_DOWN_START;
                     currentThrQuiet = THR_DOWN_QUIET;
-                    debugPrintln("Partenza verso il BASSO");
+                    //debugPrintln("Partenza verso il BASSO");
                     CommData commOut = {EVENT_USAGE_DOWN, 1};
-                    xStreamBufferSend(commSensorStreamBuffer, &commOut, sizeof(CommData), 0);
                 }
                 
-                if (millis() - stopTimer > 1500 && !misalignmentChecked && !isAtFloor) {
+                if (millis() - stopTimer > 1500 && !misalignmentChecked) {
                     if (!isAtFloor) {
-                        debugPrintln("ALLARME: FERMO MA NON AL PIANO (Disallineato)!");
+                        //debugPrintln("ALLARME: FERMO MA NON AL PIANO (Disallineato)!");
                         CommData commOut = {EVENT_MISALIGNMENT, 1};
-                        xStreamBufferSend(commSensorStreamBuffer, &commOut, sizeof(CommData), 0);
                     } else {
-                        debugPrintln("Cabina ferma e correttamente allineata.");
+                        //debugPrintln("Cabina ferma e correttamente allineata.");
                     }
                     misalignmentChecked = true; 
                 }
+                //printf("FERMO --> %s",currentState == FERMO ? "FERMO" : (currentState == PICCO_PARTENZA ? "PARTENZA" : (currentState == VIAGGIO_COSTANTE ? "VIAGGIO" : "FRENATA")));
                 break;
 
             case PICCO_PARTENZA:
@@ -424,13 +400,13 @@ void vFilterTask(void *pvParameters) {
                     // In salita, attendiamo che l'accelerazione positiva scenda verso lo zero (quiete)
                     if (z_fsm < currentThrQuiet) {
                         currentState = VIAGGIO_COSTANTE;
-                        debugPrintln("... In viaggio a velocità costante ");
+                        //printf("... In viaggio a velocità costante ");
                     }
                 } else {
                     // In discesa, attendiamo che l'accelerazione negativa salga verso lo zero (quiete)
                     if (z_fsm > currentThrQuiet) {
                         currentState = VIAGGIO_COSTANTE;
-                        debugPrintln("... In viaggio a velocità costante (0g)");
+                        //printf("... In viaggio a velocità costante (0g)");
                     }
                 }
                 break;
@@ -441,13 +417,13 @@ void vFilterTask(void *pvParameters) {
                     // In salita, freniamo quando l'accelerazione diventa negativa (decelerazione)
                     if (z_fsm < THR_BRAKE_UP) {
                         currentState = PICCO_FRENATA;
-                        debugPrintln("Inizio frenata in salita...");
+                        //printf("Inizio frenata in salita...");
                     }
                 } else {
                     // In discesa, freniamo quando l'accelerazione diventa positiva (decelerazione)
                     if (z_fsm > THR_BRAKE_DOWN) {
                         currentState = PICCO_FRENATA;
-                        debugPrintln("Inizio frenata in discesa...");
+                        //printf("Inizio frenata in discesa...");
                     }
                 }
                 break;
@@ -460,12 +436,37 @@ void vFilterTask(void *pvParameters) {
                         currentState = FERMO;
                         stopTimer = millis();        // Avvia timer per controllo disallineamento
                         misalignmentChecked = false; // Reset per il prossimo controllo
-                        debugPrintln("Ascensore fermo al piano.");
+                        printf("Ascensore fermo al piano.");
                     } else {
-                        debugPrintln("Ascensore fermo, ma non al piano! (Possibile disallineamento)");
+                        currentState = FERMO; // Rimaniamo fermi, ma non siamo al piano!
+                        printf("Ascensore fermo, ma non al piano! (Possibile disallineamento)");
                     }
                 }
                 break;
         }
+
+
+        
+        printCount++;
+        oledCount++;
+        if (oledCount % 50 == 0) {
+            /*oledPrint(
+                currentState == FERMO ? "FERMO" : (currentState == PICCO_PARTENZA ? "PARTENZA" : (currentState == VIAGGIO_COSTANTE ? "VIAGGIO" : "FRENATA")),
+                travelingUp ? "Verso l'ALTO" : "Verso il BASSO",
+                isAtFloor ? "AL PIANO" : "IN MOVIMENTO",
+                cum_vZ
+            );*/
+            oledCount = 0;
+
+        }
+        if (printCount % 1 == 0) {
+            Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", z, emaZslow, emaZfast, emaHall, delta_vZ, cum_vZ);
+
+            printCount = 0;
+
+        }
+
     }
-}*/
+    
+}
+
