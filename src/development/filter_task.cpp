@@ -461,7 +461,6 @@ void vFilterTask(void *pvParameters) {
         }
         if (printCount % 1 == 0) {
             Serial.printf("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", z, emaZslow, emaZfast, emaHall, delta_vZ, cum_vZ);
-
             printCount = 0;
 
         }

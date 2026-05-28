@@ -59,17 +59,19 @@ void vIntegratorTask(void *pvParameters) {
     positionZ += 0.5f * (prevVelocityZ + cum_vZ) * dt; // Trapezoidal integration for distance
 
     // Static detection based on hall sensor
-    if (fabsf(floorHall) >= 250 && floorHall >= 0.7 *hallPrev && floorHall <= 1.3 * hallPrev) { // if hall reading is stable within 10% of previous
+    bool hallLooksStable = fabsf(floorHall) >= 250 && floorHall >= 0.7f * hallPrev && floorHall <= 1.3f * hallPrev;
+    bool accelLooksStill = fabsf(accelZ) < DEADBAND_THR;
+
+    if (hallLooksStable) { // if hall reading is stable within 10% of previous
       hallStaticCounter++;
-      if (hallStaticCounter >= staticCounterThreshold) {
+      if (hallStaticCounter >= staticCounterThreshold && accelLooksStill) {
         debugPrint("im stopped");
         if (!isStatic) lastTimeStoppedMs = millis();
         isStatic = true;
-        // reset stuff
+        // reset integrator only when the cabin is really still
         cum_vZ = 0.0f;
-        accelZ = 0.0f;
         prevVelocityZ = 0.0f;
-        prevAccelZ = 0.0f;
+        prevAccelZ = accelZ;
         // positionZ = 0.0f;
         
       }
