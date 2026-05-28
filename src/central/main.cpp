@@ -12,8 +12,9 @@
 #define OLED_RST 21
 #define VEXT_PIN 36
 
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST);
 QueueHandle_t alertQueue = NULL;
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST);
 
 void setup() {
     Serial.begin(115200);
@@ -46,7 +47,6 @@ void setup() {
     display.println("Initializing...");
     display.display();
 
-    // Questo metodo crea anche l'alertQueue automaticamente!
     if (!initLoRaCommTask()) {
         Serial.println("[Setup] LoRa initialization FAILED!");
         display.clearDisplay();
@@ -66,23 +66,35 @@ void setup() {
     display.display();
     delay(2000);
 
-    // Lanciamo il task del Wi-Fi / AWS
-    xTaskCreatePinnedToCore(connectAWS,
-                            "task_aws",
-                            12288,
-                            NULL,
-                            2,
-                            NULL,
-                            1);
+    alertQueue = xQueueCreate(10, sizeof(AlertData));
+    if (alertQueue == NULL) {
+        Serial.println("ERRORE: Coda non creata!");
+        display.println("QUEUE FAIL!");
+        display.display();
+        while(1);
+    }
+
+    if (!initLoRaCommTask()) {
+        Serial.println("ERRORE: Radio LoRa fallita!");
+        display.println("LORA FAIL!");
+        display.display();
+        while(1);
+    }
+
+    xTaskCreatePinnedToCore(    connectAWS,
+                                "task_aws",
+                                12288,
+                                NULL,
+                                2,
+                                NULL,
+                                1
+    );
 
     display.println("SISTEMA ONLINE!");
     display.display();
     Serial.println("Setup completato.");
 
-    // Eliminiamo il task setup() che non ci serve più
     vTaskDelete(NULL);
 }
 
-void loop() {
-    // Non usato
-}
+void loop() {}

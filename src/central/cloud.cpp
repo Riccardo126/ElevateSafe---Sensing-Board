@@ -8,8 +8,12 @@
 #include "lora.h"
 
 #define MQTT_LOOP (50 / portTICK_PERIOD_MS)
+#define RETRY_DELAY (2000 / portTICK_PERIOD_MS)
+
 #define AWS_IOT_PUBLISH_TOPIC "elevateSafe/alerts"
 #define AWS_IOT_SUBSCRIBE_TOPIC "elevateSafe/commands"
+
+TaskHandle_t task_publish = NULL;
 
 WiFiClientSecure wifiClient = WiFiClientSecure();
 PubSubClient mqttClient(wifiClient);
@@ -43,6 +47,41 @@ void syncTime() {
     Serial.println(" OK!");
 }
 
+void message_publish(void *pvParameters) {
+    vTaskDelay(RETRY_DELAY);
+
+    StaticJsonDocument<200> doc;
+    AlertData data;
+
+    Serial.println("\n\n[Publish Task] Started, waiting for data from queue...\n\n");
+
+    while (true) {
+        if (xQueueReceive(alertQueue, &data, portMAX_DELAY) == pdTRUE) {
+            
+            Serial.printf("[Publish Task] Ricevuto da LoRa: Elevator ID=%u, Alarm=%u\n", data.elev_id, data.alarm);
+            
+            doc.clear();
+            doc["elevator_id"] = data.elev_id;
+            doc["alarm"] = data.alarm;
+            
+            char out[256];
+            memset(out, 0, sizeof(out)); // Pulisce la memoria
+            serializeJson(doc, out);
+            
+            if (mqttClient.connected()) {
+                // Rimosso 'len', la libreria lavora meglio solo con la stringa
+                if(mqttClient.publish(AWS_IOT_PUBLISH_TOPIC, out)) {
+                    Serial.println("[MQTT] Inviato ad AWS con successo!");
+                } else {
+                    Serial.println("[MQTT] Errore di invio.");
+                }
+            }
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(10)); 
+    }
+}
+
 void connectAWS(void *pvParameters) {
     Serial.println("[WiFi Task] Connecting to WiFi...");
     WiFi.mode(WIFI_STA);
@@ -67,7 +106,7 @@ void connectAWS(void *pvParameters) {
 
     String clientId = String(THINGNAME) + "-" + String(random(1000, 9999));
 
-    while (!mqttClient.connect(clientId.c_str())) {
+    while (!mqttClient.connect(THINGNAME)) {
         Serial.print(".");
         delay(1000);
     }
@@ -79,37 +118,11 @@ void connectAWS(void *pvParameters) {
  
     mqttClient.subscribe(AWS_IOT_SUBSCRIBE_TOPIC);
     Serial.println("AWS IoT Connected!");
-    Serial.println("[WiFi Task] Pronti a ricevere dati da LoRa e pubblicare...");
 
-    // VARIABILE PER LA CODA
-    AlertData data;
-    StaticJsonDocument<200> doc;
-    char out[256];
+    xTaskCreate(message_publish, "task_publish", 4096, NULL, 4, &task_publish);
 
     while (true) {
-        // Mantieni viva la connessione MQTT in modo sicuro
         mqttClient.loop();
-
-        // Leggi dalla coda SENZA BLOCCARE il task (0 delay)
-        if (xQueueReceive(alertQueue, &data, 0) == pdTRUE) {
-            Serial.printf("[WiFi Task] Ricevuto da LoRa: Elevator ID=%u, Alarm=%u\n", data.elev_id, data.alarm);
-            
-            doc.clear();
-            doc["elevator_id"] = data.elev_id;
-            doc["alarm"] = data.alarm;
-            
-            memset(out, 0, sizeof(out));
-            serializeJson(doc, out);
-            
-            if (mqttClient.connected()) {
-                if(mqttClient.publish(AWS_IOT_PUBLISH_TOPIC, out)) {
-                    Serial.println("[MQTT] Inviato ad AWS con successo!");
-                } else {
-                    Serial.println("[MQTT] Errore di invio.");
-                }
-            }
-        }
-        
         vTaskDelay(MQTT_LOOP);
     }
 }
