@@ -10,12 +10,6 @@ const char WIFI_SSID[] PROGMEM = "Iphone di @matteoshiula" ;              //chan
 const char WIFI_PASSWORD[] PROGMEM = "Password";           //change this
 const char AWS_IOT_ENDPOINT[] PROGMEM = "a290zt0vuad6qr-ats.iot.eu-south-1.amazonaws.com";       //change this
  
-// Lora communication key
-const uint8_t LORA_AES_KEY[16] = {
-    0x18, 0xE5, 0x5A, 0x4A, 0x6B, 0xDF, 0x78, 0x3F, 
-    0xFB, 0x6C, 0xD0, 0x88, 0xD0, 0x16, 0xAF, 0x80
-};
-
 // Amazon Root CA 1
 static const char AWS_CERT_CA[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----

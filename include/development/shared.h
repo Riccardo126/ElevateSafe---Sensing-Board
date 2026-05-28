@@ -7,6 +7,19 @@
 #include <freertos/semphr.h>
 #include "config.h"  // For SensorData and other configs
 
+
+#ifndef SHARED_H
+#define SHARED_H
+enum ElevState { 
+    FERMO, 
+    PARTENZA, 
+    VIAGGIO_COSTANTE, 
+    FRENATA 
+};
+
+extern ElevState currentState;
+#endif
+
 // ========== DEBUG MODE CONFIGURATION ==========
 // Set to true for debug messages, false for actual serial communication
 extern bool DEBUG_MODE;

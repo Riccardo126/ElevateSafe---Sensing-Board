@@ -125,7 +125,7 @@ void timerCallback(void *arg) {
   }
 }
 
-
+ElevState currentState = FERMO; // Stato iniziale dell'ascensore
 
 void setup() {
   if(DEBUG_MODE) {
@@ -285,7 +285,7 @@ void setup() {
   xTaskCreatePinnedToCore(vFilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
   xTaskCreatePinnedToCore(vIntegratorTask, "IntegratorTask", 4096, NULL, 2, &IntegratorTaskHandle, 0);
   xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
-  //xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
+  xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }
 
 void loop() {

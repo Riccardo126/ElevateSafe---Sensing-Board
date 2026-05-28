@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-CSV_PATH = "test/sugiudiag.csv"
+CSV_PATH = "test/010sugiudiag.csv"
 
 # Program Time [s],accel x,accel y,accel z,ema slow x,ema slow y,ema slow z,ema fast x,ema fast y,ema fast z,data 9
 
@@ -30,8 +30,8 @@ fig, ax = plt.subplots(figsize=(14, 4))
 ax.plot(time_s, pd.to_numeric(df["z"]), label="AccelZ", linewidth=0.9)
 ax.plot(time_s, pd.to_numeric(df["slow z"]), label="emaZslow", linewidth=0.9)
 ax.plot(time_s, pd.to_numeric(df["fast z"]), label="emaZfast", linewidth=0.9)
-hall = pd.to_numeric(df["hall"], errors="coerce")
-hall_norm = (hall - hall.min()) / (hall.max() - hall.min())
+#hall = pd.to_numeric(df["hall"], errors="coerce")
+#hall_norm = (hall - hall.min()) / (hall.max() - hall.min())
 #ax.plot(time_s, hall_norm, label="emaHall (norm)", linewidth=1.1)
 
 ax.set_title("AccelZ, emaZslow, emaZfast, emaHall")
