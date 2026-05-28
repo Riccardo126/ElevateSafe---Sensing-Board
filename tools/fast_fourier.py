@@ -57,6 +57,15 @@ freqs_fft = np.fft.rfftfreq(pad_len, d=1.0 / fs)
 window_correction = np.sum(win) / N
 mag_db = 20.0 * np.log10(np.abs(X) / np.sum(win) + 1e-20)
 
+# Calcola magnitudine lineare single-sided corretta per la window
+# X è il risultato di rfft su (segnale*win) con lunghezza pad_len
+mag = np.abs(X) * 2.0 / np.sum(win)
+# DC non va raddoppiato
+mag[0] /= 2.0
+# Se pad_len è pari, l'ultimo bin è Nyquist e non va raddoppiato
+if pad_len % 2 == 0:
+    mag[-1] /= 2.0
+
 # === Spectrogram (anomalie time-varying) ===
 f_s, t_s, Sxx = spectrogram(segnale, fs=fs, window='hann', 
                              nperseg=256, noverlap=200, mode='magnitude')
@@ -87,17 +96,13 @@ axes[1].set_title('Spectrogram — anomalie in bianco/giallo')
 axes[1].set_ylim(0, min(fs/2, f_max * 3))
 plt.colorbar(pcm, ax=axes[1], label='dB')
 
-# Segnale nel tempo
-time = np.arange(N) * ts
-axes[2].plot(time, segnale, 'r-', linewidth=0.8)
-axes[2].set_xlabel('Time (s)')
+# FFT Magnitude (ampiezza lineare)
+axes[2].plot(freqs_fft, mag, 'r-', linewidth=1.0)
+axes[2].set_xlabel('Frequency (Hz)')
 axes[2].set_ylabel('Amplitude')
-axes[2].set_title('Segnale detrended')
+axes[2].set_title('FFT Magnitude (linear)')
 axes[2].grid(True, alpha=0.3)
-
-# Evidenzia anomalie sullo spettrogramma
-for t_anom in anomaly_times:
-    axes[2].axvline(t_anom, color='orange', alpha=0.5, linestyle=':')
+axes[2].set_xlim(0, fs/2)
 
 plt.tight_layout()
 plt.show()

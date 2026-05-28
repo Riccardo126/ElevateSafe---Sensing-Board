@@ -7,7 +7,7 @@ import threading
 from datetime import datetime
 
 # Configuration
-SERIAL_PORT = '/dev/ttyUSB0'
+SERIAL_PORT = 'COM3'
 BAUD_RATE = 921600
 SAMPLES_PER_BLOCK = 1
 BYTES_PER_SAMPLE = 20

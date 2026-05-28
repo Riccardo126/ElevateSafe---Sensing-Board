@@ -376,7 +376,7 @@ void vFilterTask(void *pvParameters) {
                     if(stopTimer==0) stopTimer = millis();
                     else if (millis() - stopTimer >= 1500) {
                         if(!isAtFloor) {
-                            printf("fermo fuori dal piano");
+                            debugPrintln("fermo fuori dal piano");
 
                             CommData commOut;
                             commOut.anomalyType = 2; // Misalignment
@@ -385,7 +385,7 @@ void vFilterTask(void *pvParameters) {
                             xQueueSendToBack(commSensorQueue, &commOut, 5);
                         }
                         else {
-                            printf("fermo a piano");
+                            debugPrintln("fermo a piano");
                         }
                         misalignmentChecked = true;
                     }
