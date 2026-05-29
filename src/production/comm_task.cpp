@@ -7,8 +7,9 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <string.h>
+#include "shared.h"
 
-namespace {
+
 constexpr float kLoRaFrequencyMHz = 868.0f;
 constexpr float kLoRaBandwidthKHz = 125.0f;
 constexpr uint8_t kLoRaSpreadingFactor = 7;
@@ -34,16 +35,9 @@ constexpr uint8_t kOledVextPin = 36;
 constexpr int kOledWidth = 128;
 constexpr int kOledHeight = 64;
 
-constexpr size_t kAlertQueueLength = 8;
-constexpr size_t kLoRaTaskStackSize = 6144;
-constexpr UBaseType_t kLoRaTaskPriority = 2;
-constexpr BaseType_t kLoRaTaskCore = 0;
-
 SPIClass loraSpi(FSPI);
 Module loraModule(kRadioCsPin, kRadioIrqPin, kRadioResetPin, kRadioBusyPin, loraSpi);
 SX1262 loraRadio(&loraModule);
-QueueHandle_t alertQueue = nullptr;
-TaskHandle_t loRaTaskHandle = nullptr;
 Adafruit_SSD1306 oled(kOledWidth, kOledHeight, &Wire, kOledResetPin);
 bool oledReady = false;
 
@@ -65,13 +59,13 @@ void logRadioStatus(const char *prefix, int16_t state) {
     Serial.printf("%s %d\n", prefix, state);
 }
 
-void loraTask(void *pvParameters) {
+void vCommTask(void *pvParameters) {
     (void)pvParameters;
-
+    initLoRaCommTask();
     AlertData alertData{};
 
     for (;;) {
-        if (xQueueReceive(alertQueue, &alertData, portMAX_DELAY) != pdTRUE) {
+        if (xQueueReceive(commSensorQueue, &alertData, portMAX_DELAY) != pdTRUE) {
             continue;
         }
 
@@ -88,7 +82,7 @@ void loraTask(void *pvParameters) {
                           alertData.alarm,
                           alertData.elev_id,
                           static_cast<unsigned>(sizeof(AlertData)));
-            showOledStatus("Messaggio inviato", oledLine);
+            //showOledStatus("Messaggio inviato", oledLine);
         } else {
             logRadioStatus("[LoRa] TX failed", state);
             char errorLine[24];
@@ -97,14 +91,9 @@ void loraTask(void *pvParameters) {
         }
     }
 }
-} // namespace
-
 static_assert(sizeof(AlertData) == 4, "AlertData must stay 4 bytes on ESP32");
 
 bool initLoRaCommTask() {
-    if (alertQueue != nullptr) {
-        return true;
-    }
 
     // Heltec V3 powers the onboard OLED through Vext (active low).
     pinMode(kOledVextPin, OUTPUT);
@@ -140,34 +129,10 @@ bool initLoRaCommTask() {
         return false;
     }
 
-    alertQueue = xQueueCreate(kAlertQueueLength, sizeof(AlertData));
-    if (alertQueue == nullptr) {
-        Serial.println("[LoRa] Failed to create alert queue");
-        return false;
-    }
-
-    BaseType_t created = xTaskCreatePinnedToCore(loraTask,
-                                                 "LoRaCommTask",
-                                                 kLoRaTaskStackSize,
-                                                 nullptr,
-                                                 kLoRaTaskPriority,
-                                                 &loRaTaskHandle,
-                                                 kLoRaTaskCore);
-    if (created != pdPASS) {
-        Serial.println("[LoRa] Failed to create FreeRTOS task");
-        vQueueDelete(alertQueue);
-        alertQueue = nullptr;
-        return false;
-    }
-
     Serial.println("[LoRa] task initialized");
     return true;
 }
 
 bool sendAlertData(const AlertData &alertData) {
-    if (alertQueue == nullptr) {
-        return false;
-    }
-
-    return xQueueSend(alertQueue, &alertData, 0) == pdTRUE;
+    return xQueueSend(commSensorQueue, &alertData, 0) == pdTRUE;
 }

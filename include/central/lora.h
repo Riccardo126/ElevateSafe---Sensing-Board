@@ -12,5 +12,3 @@ typedef struct AlertData {
 
 bool initLoRaCommTask();
 void cloudTask(void *pvParameters);
-
-extern QueueHandle_t alertQueue;

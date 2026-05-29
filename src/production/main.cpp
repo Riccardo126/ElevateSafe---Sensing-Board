@@ -344,7 +344,7 @@ void setup() {
   xTaskCreatePinnedToCore(vSensorTask, "SensorTask", 4096, NULL, 3, &SensorTaskHandle, 1);
   xTaskCreatePinnedToCore(vFilterTask, "FilterTask", 4096, NULL, 2, &FilterTaskHandle, 0);
   //xTaskCreatePinnedToCore(vIntegratorTask, "IntegratorTask", 4096, NULL, 2, &IntegratorTaskHandle, 0);
-  xTaskCreate(vCommTask, "CommTask", 4096, NULL, 2, &CommTaskHandle);
+  xTaskCreate(vCommTask, "CommTask", 6096, NULL, 2, &CommTaskHandle);
   xTaskCreate(vDisplayTask, "DisplayTask", 2048, NULL, 1, &DisplayTaskHandle);
 }
 
