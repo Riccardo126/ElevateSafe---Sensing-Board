@@ -69,7 +69,6 @@ void message_publish(void *pvParameters) {
             serializeJson(doc, out);
             
             if (mqttClient.connected()) {
-                // Rimosso 'len', la libreria lavora meglio solo con la stringa
                 if(mqttClient.publish(AWS_IOT_PUBLISH_TOPIC, out)) {
                     Serial.println("[MQTT] Inviato ad AWS con successo!");
                 } else {
@@ -108,7 +107,7 @@ void connectAWS(void *pvParameters) {
 
     while (!mqttClient.connect(THINGNAME)) {
         Serial.print(".");
-        delay(1000);
+        delay(2000);
     }
  
     if (!mqttClient.connected()) {
