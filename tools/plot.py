@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-CSV_PATH = "test\\010sugiudiag.csv"
+CSV_PATH = "test\\012susudiag-1000hz-migliore.csv"
 
 
 # Program Time [s],accel x,accel y,accel z,ema slow x,ema slow y,ema slow z,ema fast x,ema fast y,ema fast z,data 9
@@ -34,11 +34,12 @@ ax.plot(time_s, pd.to_numeric(df["fast z"]), label="emaZfast", linewidth=0.9)
 #hall_norm = (hall - hall.min()) / (hall.max() - hall.min())
 #ax.plot(time_s, hall_norm, label="emaHall (norm)", linewidth=1.1)
 
-ax.set_title("AccelZ, emaZslow, emaZfast, emaHall")
-ax.set_xlabel("Tempo [s]")
-ax.set_ylabel("Valore")
+ax.set_title("AccelZ, emaZslow, emaZfast", fontsize=24)
+ax.set_xlabel("Tempo [s]",fontsize=20)
+ax.set_ylabel("Valore",fontsize=20)
 ax.grid(True, linewidth=0.3, alpha=0.5)
-ax.legend(loc="upper right", fontsize=8)
+ax.tick_params(axis='both', which='major', labelsize=14)
+ax.legend(loc="upper right", fontsize=14)
 
 fig.tight_layout()
 #fig.savefig("plot_z_hall_simple.png", dpi=120)
