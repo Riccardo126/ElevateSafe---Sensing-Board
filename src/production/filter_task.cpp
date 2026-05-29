@@ -236,6 +236,9 @@ void vFilterTask(void *pvParameters) {
                         stateTimer = millis();
                     } else if (millis() - stateTimer >= 20) {
                         currentState = PARTENZA;
+                            commOut.alarm = 3;
+                            commOut.elev_id = 1;
+                        sendAlertData(commOut);
                         travelingUp = true;
                         stateTimer = 0;
                         stopTimer = 0;
@@ -247,6 +250,9 @@ void vFilterTask(void *pvParameters) {
                         stateTimer = millis();
                     } else if (millis() - stateTimer >= 20) {
                         currentState = PARTENZA;
+                            commOut.alarm = 4;
+                            commOut.elev_id = 1;
+                        sendAlertData(commOut);
                         travelingUp = false;
                         stateTimer = 0;
                         stopTimer = 0;
