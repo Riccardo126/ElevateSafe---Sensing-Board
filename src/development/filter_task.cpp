@@ -490,7 +490,7 @@ void vFilterTask(void *pvParameters) {
             oledCount = 0;
 
         }
-        debugPrint("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", x, y, emaXslow, emaYslow, emaXfast, emaYfast);
+        //debugPrint("%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", x, y, emaXslow, emaYslow, emaXfast, emaYfast);
   
         uint32_t stop = micros();
     }

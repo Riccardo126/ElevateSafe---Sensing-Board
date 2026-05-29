@@ -47,11 +47,7 @@ TaskHandle_t loRaTaskHandle = nullptr;
 Adafruit_SSD1306 oled(kOledWidth, kOledHeight, &Wire, kOledResetPin);
 bool oledReady = false;
 
-void logRadioStatus(const char *prefix, int16_t state) {
-    Serial.printf("%s %d\n", prefix, state);
-}
-
-void showOledStatus(const char *line1, const char *line2 = nullptr) {
+void showOledStatus(const char *title, const char *line) {
     if (!oledReady) {
         return;
     }
@@ -60,24 +56,13 @@ void showOledStatus(const char *line1, const char *line2 = nullptr) {
     oled.setTextSize(1);
     oled.setTextColor(SSD1306_WHITE);
     oled.setCursor(0, 0);
-    oled.println(line1);
-    if (line2 != nullptr) {
-        oled.println(line2);
-    }
-    // add a simple uptime timestamp (HH:MM:SS) on the bottom line
-    {
-        uint32_t ms = millis();
-        uint32_t seconds = ms / 1000u;
-        uint32_t hh = (seconds / 3600) % 100; // cap hours to two digits
-        uint32_t mm = (seconds % 3600) / 60;
-        uint32_t ss = seconds % 60;
-        char ts[16];
-        snprintf(ts, sizeof(ts), "t=%02u:%02u:%02u", static_cast<unsigned>(hh), static_cast<unsigned>(mm), static_cast<unsigned>(ss));
-        // position cursor near bottom (use y=56 for 8px font on 64px height)
-        oled.setCursor(0, 56);
-        oled.println(ts);
-    }
+    oled.println(title);
+    oled.println(line);
     oled.display();
+}
+
+void logRadioStatus(const char *prefix, int16_t state) {
+    Serial.printf("%s %d\n", prefix, state);
 }
 
 void loraTask(void *pvParameters) {
@@ -93,7 +78,7 @@ void loraTask(void *pvParameters) {
         char oledLine[24];
         snprintf(oledLine, sizeof(oledLine), "alarm=%d", alertData.alarm);
         Serial.printf("[LoRa] TX start alarm=%d\n", alertData.alarm);
-        showOledStatus("Invio...", oledLine);
+        //showOledStatus("Invio...", oledLine);
 
         // Invio diretto dei dati in plaintext
         int16_t state = loraRadio.transmit(reinterpret_cast<uint8_t*>(&alertData), sizeof(AlertData));
@@ -108,7 +93,7 @@ void loraTask(void *pvParameters) {
             logRadioStatus("[LoRa] TX failed", state);
             char errorLine[24];
             snprintf(errorLine, sizeof(errorLine), "err=%d", state);
-            showOledStatus("Invio fallito", errorLine);
+            //showOledStatus("Invio fallito", errorLine);
         }
     }
 }
@@ -131,7 +116,7 @@ bool initLoRaCommTask() {
     if (!oledReady) {
         Serial.println("[OLED] Init failed");
     } else {
-        showOledStatus("OLED pronto");
+        //showOledStatus("OLED pronto");
     }
 
     pinMode(kRadioCsPin, OUTPUT);

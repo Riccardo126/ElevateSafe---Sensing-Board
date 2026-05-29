@@ -17,3 +17,4 @@ const uint8_t LORA_AES_KEY[16] = {
 
 bool initLoRaCommTask();
 bool sendAlertData(const AlertData &alertData);
+void vCommTask(void *pvParameters);
