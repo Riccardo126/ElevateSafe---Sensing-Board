@@ -172,7 +172,7 @@ void vFilterTask(void *pvParameters) {
         */
 
        // ===================================================================================================   RICONTROLLA
-        if (anomalyX || anomalyY || anomalyZ) { //
+        if (anomalyX || anomalyY || anomalyZ) { //|| anomalyZ
             uint32_t nowMs = millis();
             if (nowMs - lastAnomalyPacketMs >= ANOMALY_COOLDOWN_MS) {
                 commOut.alarm = 1;
@@ -218,7 +218,6 @@ void vFilterTask(void *pvParameters) {
                     } else if (millis() - stopTimer >= 1500) {
                         if (!isAtFloor) {
                             printf("STOPPED out of the floor\n");
-                            AlertData commOut{};
                             commOut.alarm = 2;
                             commOut.elev_id = 1;
                             anomalyZmiss = true;
