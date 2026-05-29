@@ -10,7 +10,7 @@ struct SensorData {
 };
 
 
-#define SAMPLE_RATE_HZ 1000 //max 1600 for LSMDS3
+#define SAMPLE_RATE_HZ 10 //max 1600 for LSMDS3
 #define SAMPLES_PER_BLOCK 50
 #define TIMER_PERIOD_US (1000000 / SAMPLE_RATE_HZ)  // 1000 us = 1ms
 #define STREAM_BUFFER_SIZE (SAMPLES_PER_BLOCK * sizeof(SensorData) * 2)
