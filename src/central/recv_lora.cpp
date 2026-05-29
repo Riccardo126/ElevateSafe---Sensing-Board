@@ -2,9 +2,9 @@
 #include <RadioLib.h>
 #include <SPI.h>
 #include <Adafruit_SSD1306.h>
-#include "lora.h"
 #include "secrets.h"
-
+#include "lora.h"
+#include "cloud.h"
 // OLED Display
 extern Adafruit_SSD1306 display;
 
@@ -89,7 +89,7 @@ void loraReceiveTask(void *pvParameters) {
         uint32_t currentTime = millis();
         
         // Print "Waiting" every 1 second
-        if (currentTime - lastWaitingTime >= 1000) {
+        if (currentTime - lastWaitingTime >= 5000) {
             Serial.printf("[%lu ms] [LoRa] Waiting for packet...\n", currentTime);
             updateDisplay("Waiting...", lastElevId, lastAlarmValue);
             lastWaitingTime = currentTime;
